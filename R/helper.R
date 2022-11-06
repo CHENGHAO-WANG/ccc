@@ -1,28 +1,149 @@
 
-# check the input
+### check the dimensions and classes input
 
 precheck <- function(geData.list, ctData.list, group.vec, ref) {
-  
-  message("Checking data dimensions ... \n")
-  
+
+  message("Checking data dimensions ...")
+
   if (!is.vector(group.vec) & !is.factor(group.vec)) stop("group.vec must be a vector or a factor")
-  
+
   n.grp <- length(unique(group.vec))
-  
+
   if (n.grp > 6) warning(paste0("Too many group levels. <= 6 is recommended. Currently ",n.grp))
   if (n.grp < 2) stop("Less than 2 group levels. Check your group.vec input or try diffLR2")
-  
-  if (!is.list(geData.list) | !is.list(ctData.list)) {
-    if ()
-  }
-  
-  if (!all(sapply(list(length(geData.list),length(ctData.list)), function(x) x == nrow(design_matrix) ))) {
+
+  if (!is.list(geData.list) | !is.list(ctData.list)) stop("geData.list and ctData.list must be lists of matrices or data.frames")
+
+  if (!all(sapply(list(length(geData.list),length(ctData.list)), function(x) x == length(group.vec) ))) {
     stop("geData.list, ctData.list, group.vec indicate different number of samples")
   }
-  
-  
+
+  samples <- 1:length(group.vec)
+
+  for (i in samples) {
+    if (ncol(geData.list[[i]]) != nrow(ctData.list[[i]])) stop(paste0("geData.list and ctData.list indicate different cell number in sample ",i))
+  }
 }
 
-prefilter() <- function() {
+### rename the cols of input and convert them to data.frames
 
+Rename <- function(geData.list, ctData.list, lrdb, env) {
+
+  samples <- 1:length(geData.list)
+
+  for (i in samples) {
+    geData.list[[i]] <- as.data.frame(geData.list[[i]])
+    geData.list[[i]] <- cbind(gene = rownames(geData.list[[i]]), data.frame(geData.list[[i]], row.names = NULL))
+
+    ctData.list[[i]] <- as.data.frame(ctData.list[[i]])
+    colnames(ctData.list[[i]]) <- c("cell", "celltype")
+  }
+
+  colnames(lrdb) <- c("ligand", "receptor")
+
+  assign("geData.list", geData.list, envir = env)
+  assign("ctData.list", ctData.list, envir = env)
+  assign("lrdb", lrdb, envir = env)
+
+  return(NULL)
 }
+
+### separate the gene expression data of the cell types of interest
+### only keep the ligand/receptor genes
+
+preprocess <- function(geData.list, ctData.list, lrdb, celltypes.L, celltypes.R, env) {
+
+  samples <- 1:length(geData.list)
+
+  geData.L <- vector("list", length(samples))
+  geData.R <- vector("list", length(samples))
+
+  for (i in samples) {
+
+    if ( length(intersect(ctData.list[[i]]$celltype, celltypes.L)) == 0 ) stop("celltypes.L don't exist in sample ",i)
+    if ( length(intersect(ctData.list[[i]]$celltype, celltypes.R)) == 0 ) stop("celltypes.R don't exist in sample ",i)
+
+    if (!setequal(intersect(ctData.list[[i]]$celltype, celltypes.L), celltypes.L)) warning(paste0("In sample ",i,", some cell type(s) in celltypes.L don't exist"))
+    if (!setequal(intersect(ctData.list[[i]]$celltype, celltypes.R), celltypes.R)) warning(paste0("In sample ",i,", some cell type(s) in celltypes.R don't exist"))
+
+    cell.L <- ctData.list[[i]][ctData.list[[i]]$celltype %in% celltypes.L, "cell"]
+
+    cols <- c("gene", cell.L)
+    geData.L[[i]] <- geData.list[[i]][,cols] %>%
+      filter(gene %in% lrdb$ligand)
+
+    cell.R <- ctData.list[[i]][ctData.list[[i]]$celltype %in% celltypes.R, "cell"]
+
+    cols <- c("gene", cell.R)
+    geData.R[[i]] <- geData.list[[i]][,cols] %>%
+      filter(gene %in% lrdb$receptor)
+  }
+
+  assign("geData.L", geData.L, envir = env)
+  assign("geData.R", geData.R, envir = env)
+
+  rm(geData.list, ctData.list, envir = env)
+
+  return(NULL)
+}
+
+### filter ligand-receptor pairs
+
+prefilter <- function(lrdb, min.prop, filter.all) {
+
+  lrdb <- lrdb %>% select(ligand, receptor)
+
+  if (filter.all) {
+    message("Finding L-R existed in all samples ...")
+    # "exist" means both ligand and receptor are expressed > min.prop in all samples
+    existing.lr <- t(apply(lrdb, 1, find_lr, geData.l=geData.L, geData.r=geData.R, min.prop = min.prop))
+
+  } else {
+    message("Finding L-R existed in at least one sample ...")
+    # "exist" means both ligand and receptor are expressed > min.prop in at least one sample
+    existing.lr <- t(apply(lrdb, 1, find_lr0, geData.l=geData.L, geData.r=geData.R, min.prop = min.prop))
+  }
+
+  existing.lr <- as.data.frame(existing.lr)
+  colnames(existing.lr) <- c("ligand","receptor")
+  existing.lr <- na.omit(existing.lr)
+
+  return(existing.lr)
+}
+
+# find LR expressed in all samples (> min.prop)
+
+find_lr <- function(row_lr, geData.l, geData.r, min.prop) {
+  if ( all(sapply(geData.l, g_sample, g=row_lr[1], threshold = min.prop)) & all(sapply(geData.r, g_sample, g=row_lr[2], threshold = min.prop)) ) {
+    return(row_lr)
+  } else {
+    rep(NA,2)
+  }
+}
+
+# find LR expressed in at least one sample (> min.prop)
+
+find_lr0 <- function(row_lr, geData.l, geData.r, min.prop) {
+  if ( any(sapply(geData.l, g_sample, g=row_lr[1], threshold = min.prop) * sapply(geData.r, g_sample, g=row_lr[2], threshold = min.prop)) ) {
+    return(row_lr)
+  } else {
+    rep(NA,2)
+  }
+}
+
+#
+
+g_sample <- function(g, gedata.i, threshold) {
+  if (g %in% gedata.i$gene) {
+    if ( sum(gedata.i[gedata.i$gene==g,-1] > 0)/(ncol(gedata.i)-1) > threshold) {
+      return(TRUE)
+    } else {
+      return(FALSE)
+    }
+  } else {
+    return(FALSE)
+  }
+}
+
+
+
