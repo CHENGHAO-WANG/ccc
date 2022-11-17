@@ -20,6 +20,10 @@ hello <- function() {
 #aaa
 
 #bbb
+a=1:5
+b=1:6
+c=1:4
+Reduce(intersect,list(a,b,c))
 
 m <- matrix(1:4, nrow = 2, byrow = T)
 rownames(m) <- c("a","b")
@@ -110,3 +114,6 @@ mm <- function() {
   message("a \n")
   message("b")
 }
+
+a <- combn(1:10,2)
+apply(a, 2, rev)

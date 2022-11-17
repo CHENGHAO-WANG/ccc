@@ -23,11 +23,13 @@ precheck <- function(geData.list, ctData.list, group.vec, ref) {
   for (i in samples) {
     if (ncol(geData.list[[i]]) != nrow(ctData.list[[i]])) stop(paste0("geData.list and ctData.list indicate different cell number in sample ",i))
   }
+  
+  return(NULL)
 }
 
 ### rename the cols of input and convert them to data.frames
 
-Rename <- function(geData.list, ctData.list, lrdb, env) {
+REname <- function(geData.list, ctData.list, lrdb, env) {
 
   samples <- 1:length(geData.list)
 
@@ -131,7 +133,7 @@ find_lr0 <- function(row_lr, geData.l, geData.r, min.prop) {
   }
 }
 
-#
+# whether a gene g is expressed in the given sample
 
 g_sample <- function(g, gedata.i, threshold) {
   if (g %in% gedata.i$gene) {
@@ -146,4 +148,26 @@ g_sample <- function(g, gedata.i, threshold) {
 }
 
 
+### obtain the list of all cell type pairs across the samples
+
+get_celltype_pairs <- function(ctData.list) {
+  # obtain the shared cell types across the samples
+  celltype.list <- Reduce( intersect, get_celltype_list(ctData.list) )
+  
+  celltype.pairs <- combn(celltype.list, 2)
+  
+  celltype.pairs2 <- celltype.pairs[,2:1]
+  
+  celltype.pairs3 <- cbind(celltype.list, celltype.list)
+  
+  celltype.pairs4 <- rbind(celltype.pairs, celltype.pairs2, celltype.pairs3)
+  
+  return(celltype.pairs4)
+}
+  
+# obtain the list of cell types in each sample
+
+get_celltype_list <- function(ctData.list) {
+    lapply(ctData.list, function(x) unique(x[,2,drop=TRUE]) )
+}
 

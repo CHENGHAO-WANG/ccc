@@ -157,7 +157,7 @@ diffLR <- function(geData, ctData, lr, celltype.L, celltype.R, design_matrix,
 
   # drop NAs
   existing.lr <- na.omit(existing.lr)
-
+  ########### we are here
   cat("Done. \n")
 
   result_list <- vector("list", length = nrow(existing.lr))
