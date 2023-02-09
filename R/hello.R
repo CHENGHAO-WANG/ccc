@@ -123,3 +123,20 @@ for (i in c
      ("a")) {
   print(i)
 }
+
+
+X=matrix(c(rep(0:1, each=10), rep(1:0, each=10)), ncol = 2)
+X
+y=X%*%c(1,2)+rnorm(20,0,.6)
+y
+
+fit <- lm(y~0+X)
+fit
+X2=matrix(c(rep(1, each=20), rep(1:0, each=10)), ncol = 2)
+X2
+
+fit2 <- lm(y~0+X2)
+fit2
+
+vcov(fit)
+vcov(fit2)

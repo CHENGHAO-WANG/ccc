@@ -6,12 +6,19 @@ precheck <- function(geData.list, ctData.list, group.vec, ref) {
   message("Checking data dimensions ...")
 
   if (!is.vector(group.vec) & !is.factor(group.vec)) stop("group.vec must be a vector or a factor")
-
+  
   n.grp <- length(unique(group.vec))
 
   if (n.grp > 6) warning(paste0("Too many group levels. <= 6 is recommended. Currently ",n.grp))
   if (n.grp < 2) stop("Less than 2 group levels. Check your group.vec input or try diffLR2")
 
+  ## ref
+  
+  
+  
+  
+  ##
+  
   if (!is.list(geData.list) | !is.list(ctData.list)) stop("geData.list and ctData.list must be lists of matrices or data.frames")
 
   if (!all(sapply(list(length(geData.list),length(ctData.list)), function(x) x == length(group.vec) ))) {
