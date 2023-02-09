@@ -117,3 +117,9 @@ mm <- function() {
 
 a <- combn(1:10,2)
 apply(a, 2, rev)
+
+
+for (i in c
+     ("a")) {
+  print(i)
+}
