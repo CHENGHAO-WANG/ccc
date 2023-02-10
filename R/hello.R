@@ -39,6 +39,11 @@ ff <- function() {
   eee <- environment()
   f(eee)
   print(a)
+  ff0()
+}
+
+ff0 <- function() {
+  print(a)
 }
 
 fff <- function(b) {
@@ -93,6 +98,15 @@ h6 <- function() {
   x
 }
 
+f <- function(x) {
+  print(x)
+  ff(x)
+}
+
+ff <- function(y) {
+  print(y)
+}
+
 suppressWarnings(h6())
 
 h7 <- function() {
@@ -140,3 +154,16 @@ fit2
 
 vcov(fit)
 vcov(fit2)
+
+f <- function() {
+  for (j in 1:200) {
+  Sys.sleep(0.01)
+  cat("")
+  progress(j, max.value = 200)
+}
+}
+
+dat <- data.frame(gene=c("a","b","c"),c1=1:3, c2=2:4)
+dat
+expr.l <- t(dat[dat$gene=="c", -1])
+expr.l

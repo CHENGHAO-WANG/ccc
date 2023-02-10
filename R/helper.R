@@ -1,7 +1,7 @@
 
 ### check the dimensions and classes input
 
-precheck <- function(geData.list, ctData.list, group.vec, ref) {
+precheck <- function(geData.list, ctData.list, group.vec, ref, env) {
 
   message("Checking data dimensions ...")
 
@@ -12,12 +12,7 @@ precheck <- function(geData.list, ctData.list, group.vec, ref) {
   if (n.grp > 6) warning(paste0("Too many group levels. <= 6 is recommended. Currently ",n.grp))
   if (n.grp < 2) stop("Less than 2 group levels. Check your group.vec input or try diffLR2")
 
-  ## ref
-  
-  
-  
-  
-  ##
+  if (!(ref %in% group.vec)) stop("group.vec doesn't contain ref")
   
   if (!is.list(geData.list) | !is.list(ctData.list)) stop("geData.list and ctData.list must be lists of matrices or data.frames")
 
@@ -30,6 +25,8 @@ precheck <- function(geData.list, ctData.list, group.vec, ref) {
   for (i in samples) {
     if (ncol(geData.list[[i]]) != nrow(ctData.list[[i]])) stop(paste0("geData.list and ctData.list indicate different cell number in sample ",i))
   }
+  
+  assign("n.grp", n.grp, envir = env)
   
   return(NULL)
 }

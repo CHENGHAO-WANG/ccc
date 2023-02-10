@@ -22,6 +22,9 @@ diffLR.meta <- function(lig, rec, geData.L, geData.R, design_matrix,
     expr.r <- t(geData.R[[i]][geData.R[[i]]$gene==rec, -1])
     
     # just in case the L/R gene doesn't exist in some samples
+    # expr.l is a n*1 dataframe. Its nrow() always exists. 
+    # Its length() doesn't exist if the L/R gene doesn't exist.
+    # length() = the number of elements in the matrix.
     if (length(expr.l)==0) {
       expr.l <- data.frame(expr=rep(0, nrow(expr.l)))
     } else {
