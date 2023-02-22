@@ -29,6 +29,25 @@ m <- matrix(1:4, nrow = 2, byrow = T)
 rownames(m) <- c("a","b")
 colnames(m) <- c("c","d")
 
+
+f1 <- function(x) {
+  env <- environment()
+
+  f2(y=x, env=env)
+
+  f3()
+}
+
+f2 <- function(y, env) {
+  z <- y + 1
+
+  assign("z",z, envir = env)
+}
+
+f3 <- function() {
+  print(z)
+}
+
 f <- function(eee) {
   assign("a",1, envir = eee)
   b <<- 1
@@ -103,8 +122,8 @@ f <- function(x) {
   ff(x)
 }
 
-ff <- function(y) {
-  print(y)
+ff <- function(x) {
+  print(x)
 }
 
 suppressWarnings(h6())
