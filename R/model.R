@@ -145,8 +145,8 @@ stat_analysis <- function(existing.lr, geData.L, geData.R, group.vec, ...) {
         rownames(expr.r) <- NULL
       }
 
-      expr.l <- bind_cols(expr.l, effect=group.vec[i])
-      expr.r <- bind_cols(expr.r, effect=group.vec[i])
+      expr.l <- bind_cols(expr.l, group=group.vec[i])
+      expr.r <- bind_cols(expr.r, group=group.vec[i])
 
       expr.l$sample.id <- i
       expr.r$sample.id <- i
@@ -169,22 +169,22 @@ stat_analysis <- function(existing.lr, geData.L, geData.R, group.vec, ...) {
 
     if (add1.l) {
       data4l.extra <- data.frame(expr = 0, sample.id = samples, b = 1) %>%
-        bind_cols(group.vec)
+        bind_cols(group = group.vec)
       data4l <- bind_rows(data4l, data4l.extra)
     }
     if (add0.l) {
       data4l.extra <- data.frame(expr = 0, sample.id = samples, b = 0) %>%
-        bind_cols(group.vec)
+        bind_cols(group = group.vec)
       data4l <- bind_rows(data4l, data4l.extra)
     }
     if (add1.r) {
       data4r.extra <- data.frame(expr = 0, sample.id = samples, b = 1) %>%
-        bind_cols(group.vec)
+        bind_cols(group = group.vec)
       data4r <- bind_rows(data4r, data4r.extra)
     }
     if (add0.r) {
       data4r.extra <- data.frame(expr = 0, sample.id = samples, b = 0) %>%
-        bind_cols(group.vec)
+        bind_cols(group = group.vec)
       data4r <- bind_rows(data4r, data4r.extra)
     }
 
@@ -199,44 +199,50 @@ stat_analysis <- function(existing.lr, geData.L, geData.R, group.vec, ...) {
 
     # just in case the gene isn't expressed in some sample
     data.sup <- data.frame(sample.id = samples) %>%
-      bind_cols(effect=group.vec)
+      bind_cols(group=group.vec)
 
-    data4l.cont <- full_join(data4l.cont, data.sup, by = c("effect", "sample.id"))
-    data4r.cont <- full_join(data4r.cont, data.sup, by = c("effect", "sample.id"))
+    data4l.cont <- full_join(data4l.cont, data.sup, by = c("group", "sample.id"))
+    data4r.cont <- full_join(data4r.cont, data.sup, by = c("group", "sample.id"))
     data4l.cont[is.na(data4l.cont)] <- 0
     data4r.cont[is.na(data4r.cont)] <- 0
 
     # just in case very few cells express the relevant gene (grouping factor must be < number of observations)
     if (nrow(data4l.cont) <= length(samples)) {
-      form <- paste0("expr ~ 1 + ",effect)
+      # form <- paste0("expr ~ 1 + ",group)
+      form <- "expr ~ 1 + group"
       fit.cont.l <- lm(form, data = data4l.cont)
     } else if (re.cont) {
-      form <- paste0("expr ~ 1 + (1|sample.id) + ",effect)
+      # form <- paste0("expr ~ 1 + (1|sample.id) + ",group)
+      form <- "expr ~ 1 + (1|sample.id) + group"
       fit.cont.l <- lmer(form, data = data4l.cont)
     } else {
-      form <- paste0("expr ~ 1 + ",effect)
+      # form <- paste0("expr ~ 1 + ",group)
+      form <- "expr ~ 1 + group"
       fit.cont.l <- lm(form, data = data4l.cont)
     }
 
     if (nrow(data4r.cont) <= length(samples)) {
-      form <- paste0("expr ~ 1 + ",effect)
+      # form <- paste0("expr ~ 1 + ",group)
+      form <- "expr ~ 1 + group"
       fit.cont.r <- lm(form, data = data4r.cont)
     } else if (re.cont) {
-      form <- paste0("expr ~ 1 + (1|sample.id) + ",effect)
+      # form <- paste0("expr ~ 1 + (1|sample.id) + ",group)
+      form <- "expr ~ 1 + (1|sample.id) + group"
       fit.cont.r <- lmer(form, data = data4r.cont)
     } else {
-      form <- paste0("expr ~ 1 + ",effect)
+      # form <- paste0("expr ~ 1 + ",group)
+      form <- "expr ~ 1 + group"
       fit.cont.r <- lm(form, data = data4r.cont)
     }
 
     # if (re.cont) {
-    #   form <- paste0("expr ~ 1 + (1|sample.id) + ",effect)
+    #   form <- paste0("expr ~ 1 + (1|sample.id) + ",group)
     #
     #   fit.cont.l <- lmer(form, data = data4l.cont)
     #   fit.cont.r <- lmer(form, data = data4r.cont)
     #
     # } else {
-    #   form <- paste0("expr ~ 1 + ",effect)
+    #   form <- paste0("expr ~ 1 + ",group)
     #
     #   fit.cont.l <- lm(form, data = data4l.cont)
     #   fit.cont.r <- lm(form, data = data4r.cont)
@@ -244,7 +250,7 @@ stat_analysis <- function(existing.lr, geData.L, geData.R, group.vec, ...) {
 
     ## linear model testing
 
-    test.cont <- diffLR.test(fit.cont.l, fit.cont.r, effect = effect)
+    test.cont <- diffLR.test(fit.cont.l, fit.cont.r, group = "group")
 
     ## logistic model fitting
 
@@ -252,25 +258,27 @@ stat_analysis <- function(existing.lr, geData.L, geData.R, group.vec, ...) {
       select(-expr)
     data4r.disc <- data4r %>%
       select(-expr)
-
+    
     if (re.disc) {
-      form <- paste0("b ~ 1 + (1|sample.id) + ",effect)
+      # form <- paste0("b ~ 1 + (1|sample.id) + ",group)
+      form <- "b ~ 1 + (1|sample.id) + group"
 
       fit.disc.l <- glmer(form, data = data4l.disc, family = binomial)
       fit.disc.r <- glmer(form, data = data4r.disc, family = binomial)
 
     } else {
-      form <- paste0("b ~ 1 + ",effect)
-
+      # form <- paste0("b ~ 1 + ",group)
+      form <- "b ~ 1 + group"
+      
       fit.disc.l <- glm(form, data = data4l.disc, family = binomial)
       fit.disc.r <- glm(form, data = data4r.disc, family = binomial)
     }
 
     ## logistic model testing
 
-    test.disc <- diffLR.test.p(fit.disc.l, fit.disc.r, effect = effect)
+    test.disc <- diffLR.test.p(fit.disc.l, fit.disc.r, group = "group")
 
-    # joint test
+    # joint test 1
     test.both <- append(test.cont, test.disc)
 
     chisq.stat <- test.both$chisq.cont + test.both$chisq.disc
@@ -279,7 +287,9 @@ stat_analysis <- function(existing.lr, geData.L, geData.R, group.vec, ...) {
     test.both <- within(test.both, rm(chisq.cont, chisq.disc))
 
     test.both
-
+    
+    # joint test 2
+    
 
 
     #########################################################################
