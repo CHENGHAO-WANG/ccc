@@ -64,7 +64,13 @@ difflr <- function(geData.list, ctData.list, celltypes.L = NULL, celltypes.R = N
 
     existing.lr <- prefilter(lrdb = lrdb, min.prop = min.prop, filter.all = filter.all, geData.L = geData.L, geData.R = geData.R)
 
-    stat_analysis
+    if (verbose) {
+      stat_analysis
+    } else {
+      suppressMessages( stat_analysis() )
+    }
+
+
 
 
 
