@@ -53,7 +53,7 @@ diffLR <- function(geData, ctData, lr, celltype.L, celltype.R, design_matrix,
 
   samples <- 1:length(geData)
 
-  ### check wether the number of cells are equal in each sample
+  ### check whether the number of cells are equal in each sample
 
   for (i in samples) {
     if (ncol(geData[[i]])-1 != nrow(ctData[[i]])) {
