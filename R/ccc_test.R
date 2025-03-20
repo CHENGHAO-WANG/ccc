@@ -58,15 +58,19 @@ prep_lr <- function(lr) {
     lr_user <- lr
   } 
   
-  lr.omnipathr <- function() {
-    data("omnipathr", envir = environment())
-    omnipathr
-    }
-  lr.ramilowski <- function() {
-    data("ramilowski", envir = environment())
-    ramilowski
-    }
-
+  lr_table <- switch(EXPR = lr_name,
+                     "omnipathr" = {
+                       data("ramilowski", envir = environment())
+                       ramilowski
+                       },
+                     "ramilowski" = {
+                       data("ramilowski", envir = environment())
+                       ramilowski
+                     },
+                     "user" = lr_user,
+                     stop("'lr' should be \"omnipathr\" or \"ramilowski\" or a data.frame of ligand-receptor pairs")
+  )
+  
   lr_table <- switch(EXPR = lr_name,
                      "omnipathr" = lr.omnipathr(),
                      "ramilowski" = lr.ramilowski(),
@@ -158,6 +162,16 @@ filter_cell_type <- function(metadata, sender, receiver, min_cell, contrast) {
   missing_sender <- setdiff(sender, remaining_cell_types)
   missing_receiver <- setdiff(receiver, remaining_cell_types)
   
+  sender <- intersect(sender, remaining_cell_types)
+  receiver <- intersect(receiver, remaining_cell_types)
+  
+  if (length(sender) == 0) {
+    stop("No sender cell types remain after 'min_cell' filtering.")
+  }
+  if (length(receiver) == 0) {
+    stop("No receiver cell types remain after 'min_cell' filtering.")
+  }
+  
   if (length(missing_sender) > 0 || length(missing_receiver) > 0) {
     warning_msg <- "Some cell types in 'sender' or 'receiver' do not appear in the final subset."
     if (length(missing_sender) > 0) {
@@ -167,16 +181,6 @@ filter_cell_type <- function(metadata, sender, receiver, min_cell, contrast) {
       warning_msg <- paste0(warning_msg, "\nMissing in receiver: ", paste(missing_receiver, collapse = ", "))
     }
     warning(warning_msg)
-  }
-  
-  sender <- intersect(sender, remaining_cell_types)
-  receiver <- intersect(receiver, remaining_cell_types)
-  
-  if (length(sender) == 0) {
-    stop("No sender cell types remain after 'min_cell' filtering.")
-  }
-  if (length(receiver) == 0) {
-    stop("No receiver cell types remain after 'min_cell' filtering.")
   }
   
   return(list(metadata_subset = metadata_subset, sender = sender, receiver = receiver))
@@ -233,7 +237,7 @@ compute_cdr <- function(expression_matrix, metadata_subset, threshold) {
 
 
 
-run_analysis <- function(){
+run_analysis <- function(sender, receiver, lr_table, ){
   # Create all possible combinations of sender and receiver
   sender_receiver_combinations <- expand.grid(sender = sender, receiver = receiver)
   
@@ -242,6 +246,8 @@ run_analysis <- function(){
   
   # Convert to data.table
   result_dt <- data.table(result)
+  
+  
 }
 
 
