@@ -20,7 +20,7 @@ ccc_analysis <- function(expression_matrix, metadata,
                          verbose = TRUE,
                          min_pct = 0.01, large_n = 2, min_avg_pct = 0,
                          min_cell = 10,
-                         cutoff = 0,
+                         threshold = 0,
                          padj_method = "BH", sr_adj = TRUE,
                          control_lm, control_logmm,
                          ...
@@ -195,11 +195,42 @@ filter_lr <- function(expression_matrix, metadata_subset,
                       verbose = TRUE,
                       min_pct = 0.01, large_n = 2, min_avg_pct = 0,
                       min_cell = 10,
-                      cutoff = 0,
+                      threshold = 0,
                       ...) {
   if (is.null(id)) id <- group
   
 }
+
+
+#' 
+#' @import data.table
+#' 
+
+compute_cdr <- function(expression_matrix, metadata_subset, threshold) {
+  # Ensure rownames and colnames are correctly set
+  if (is.null(rownames(expression_matrix)) || is.null(colnames(expression_matrix))) {
+    stop("expression_matrix must have rownames (genes) and colnames (cell ids).")
+  }
+  
+  # Subset the expression matrix to only include the cell ids in metadata_subset
+  common_cells <- intersect(colnames(expression_matrix), metadata_subset$cell_id)
+  
+  if (length(common_cells) == 0) {
+    stop("No overlapping cell ids found between 'expression_matrix' and 'metadata' given 'sender' and 'receiver'.")
+  }
+  
+  expression_subset <- expression_matrix[, common_cells, drop = FALSE]
+  
+  # Calculate cdr: fraction of genes with expression > threshold for each cell
+  cdr_values <- colMeans(expression_subset > threshold)
+  
+  # Merge results with metadata_subset
+  metadata_subset[, cdr := cdr_values[match(cell_id, names(cdr_values))]]
+  
+  return(metadata_subset)
+}
+
+
 
 
 run_analysis <- function(){
