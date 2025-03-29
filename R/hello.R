@@ -186,3 +186,271 @@ dat <- data.frame(gene=c("a","b","c"),c1=1:3, c2=2:4)
 dat
 expr.l <- t(dat[dat$gene=="c", -1])
 expr.l
+
+f <- function() {
+  x <- 1
+  g()
+  g <- function() {
+    print(x)
+  }
+  
+  
+}
+
+library(data.table) 
+
+dt1 <- data.table(x=1:3, y = 2:4)
+dt2 <- data.table(z=5)
+
+l <- list(dt1, dt2)
+
+rbindlist(l,fill = TRUE, use.names = TRUE)
+
+rbindlist(l,fill = TRUE, use.names = TRUE, idcol = "notice")
+
+dt <- data.table(x=1:4)
+
+
+m <- matrix(1:4, nrow = 2, dimnames = list(NULL, c("a","b")))
+m
+
+preprocess_dt_center_all <- function(dt) {
+  dt_copy <- copy(dt) # Avoid modifying original data.table
+  categorical_cols <- names(dt_copy)[sapply(dt_copy, function(col) is.factor(col) || is.character(col))]
+  
+  # Convert categorical to numeric (one-hot encoding)
+  for (col_name in categorical_cols) {
+    col <- dt_copy[[col_name]]
+    levels_col <- unique(col)
+    for (level in levels_col) {
+      new_col_name <- paste0(col_name, "_", level)
+      dt_copy[, (new_col_name) := as.integer(col == level)]
+    }
+    dt_copy[, (col_name) := NULL] # Remove original categorical column
+  }
+  
+  # Center all columns
+  for (col_name in names(dt_copy)) {
+    dt_copy[, (col_name) := scale(dt_copy[[col_name]], center = TRUE, scale = FALSE)]
+  }
+  
+  return(dt_copy)
+}
+preprocess_dt_center_covar <- function(dt, covar) {
+  dt_copy <- copy(dt) # Avoid modifying original data.table
+  covar_exists <- covar %in% names(dt_copy)
+  if(!all(covar_exists)){
+    stop(paste0("The following columns specified in covar do not exist in the data.table: ", paste(covar[!covar_exists], collapse = ", ")))
+  }
+  
+  categorical_covar <- covar[sapply(dt_copy[, covar, with = FALSE], function(col) is.factor(col) || is.character(col))]
+  
+  # Convert categorical covar columns to numeric (one-hot encoding)
+  for (col_name in categorical_covar) {
+    col <- dt_copy[[col_name]]
+    levels_col <- unique(col)
+    for (level in levels_col) {
+      new_col_name <- paste0(col_name, "_", level)
+      dt_copy[, (new_col_name) := as.integer(col == level)]
+    }
+    dt_copy[, (col_name) := NULL] # Remove original categorical column
+    #Add new one hot encoded columns to the covar list, and remove the original column.
+    covar <- c(covar[covar != col_name], names(dt_copy)[startsWith(names(dt_copy), paste0(col_name, "_"))])
+  }
+  
+  # Center specified columns
+  for (col_name in covar) {
+    dt_copy[, (col_name) := scale(dt_copy[[col_name]], center = TRUE, scale = FALSE)]
+  }
+  
+  return(dt_copy)
+}
+# Example Usage:
+dt <- data.table(
+  A = factor(c("a", "b", "a")),
+  B = c(1, 2, 3),
+  C = c("x", "y", "z"),
+  D = 4:7
+)
+
+dt <- data.table(
+  A = factor(c("a", "b", "a")),
+  B = c(1, 2, 3),
+  C = c("x", "y", "z"),
+  D = 5:7
+)
+
+preprocessed_dt <- preprocess_dt_center_all(dt)
+print(preprocessed_dt)
+
+pdt <- preprocess_dt_center_covar(dt, covar = c("A","B"))
+
+dt2 <- data.table(
+  E = c(1,2,3,4),
+  F = factor(c("red", "blue", "red", "green"))
+)
+
+preprocessed_dt2 <- preprocess_dt(dt2)
+print(preprocessed_dt2)
+
+preprocess_dt_no_copy <- function(dt, covar) { # No copy here
+  covar_exists <- covar %in% names(dt)
+  if(!all(covar_exists)){
+    stop(paste0("The following columns specified in covar do not exist in the data.table: ", paste(covar[!covar_exists], collapse = ", ")))
+  }
+  categorical_covar <- covar[sapply(dt[, covar, with = FALSE], function(col) is.factor(col) || is.character(col))]
+  
+  for (col_name in categorical_covar) {
+    col <- dt[[col_name]]
+    levels_col <- unique(col)
+    for (level in levels_col) {
+      new_col_name <- paste0(col_name, "_", level)
+      dt[, (new_col_name) := as.integer(col == level)]
+    }
+    dt[, (col_name) := NULL]
+    covar <- c(covar[covar != col_name], names(dt)[startsWith(names(dt), paste0(col_name, "_"))])
+  }
+  
+  for (col_name in covar) {
+    dt[, (col_name) := scale(dt[[col_name]], center = TRUE, scale = FALSE)]
+  }
+  
+  return(dt)
+}
+
+dt <- data.table(
+  A = factor(c("a", "b", "a")),
+  B = c(1, 2, 3),
+  C = c("x", "y", "z"),
+  D = 4:7,
+  E = 8:11
+)
+
+covar_cols <- c("A", "B", "E")
+preprocessed_dt <- preprocess_dt_no_copy(dt, covar_cols)
+
+print(preprocessed_dt)
+print(dt) # The original 'dt' is now modified!
+
+# Create a sample data.table
+dt <- data.table(
+  A = 1:5,
+  B = 6:10,
+  C = 11:15
+)
+
+# Take a subset
+subset_dt <- dt[A > 2]
+
+# Modify the subset
+subset_dt[, B := B * 2]
+
+# Check the original data.table
+print(dt)
+print(subset_dt)
+
+# Example 2: using := with with=FALSE
+dt2 <- data.table(
+  A = 1:5,
+  B = 6:10,
+  C = 11:15
+)
+
+subset_dt2 <- dt2[A > 2]
+
+subset_dt2[, (B) := B*2, with=FALSE]
+
+print(dt2)
+print(subset_dt2)
+
+DT <- data.table(A = 1:5, B = 6:10)
+DT2 <- DT[1:3]
+DT3 <- DT[A>=3]
+DT4 <- DT[,.(A,B)]
+DT5 <- DT
+
+
+df <- data.frame(A= 1:5, B= 7:11)
+f <- function(d) {
+  setDT(d)
+  return(1)
+}
+f(df)
+
+f <- function(d) {
+  d <- as.data.table(d)
+  return(class(d))
+}
+
+dt0 <- as.data.table(df)
+
+
+
+# what if I have a column of constants?
+# what if I have two column having the same columns?
+
+df <- data.frame(y=rnorm(10), x1=2, x2 = rnorm(10))
+fit <- lm(y~x1, data = df)
+
+df <- data.frame(y=rnorm(10), x1=2, x2 = rnorm(10),x2=rnorm(10))
+names(df) <- c("y","x1","x2","x2")
+fit <- lm(y~x2, data = df)
+
+
+num_ids <- DT[, uniqueN(get("A"))]
+
+DT[1,1] <- 2
+
+df <- data.frame(y=rnorm(10),x=rep(c("a","b"), each = 5))
+df
+fit <- lm(y~0+x, data = df)
+summary(fit)
+fit1 <- lm(y~x, data = df)
+summary(fit1)
+
+
+tryCatch({lm(y~x, data = dat)}, error = function(e) {
+  return(e$message)
+})
+k <- tryCatch({lm(y~x, data = dat)
+  lm(y~x, data = dat2)
+  }, error = function(e) {return(list(e$message))})
+for (i in 1:2) {
+  tryCatch({lm(y~x, data = dat)}, error = function(e) {
+    #return(e$message)
+  })tryCatch({lm(y~x, data = dat)}, error = function(e) {})
+}
+
+counts <- c(10,15,3,19,6,9)
+x <- c(0,0,0,1,1,1)
+glm(counts ~ x, family = poisson(), control = list())
+
+y=9
+f <- function(x,y=NULL) {
+  x+y
+}
+f(1)
+
+a <- if(F) 1
+a
+
+
+f <- function(x) {
+  x+5
+}
+g <- function(f) {
+  f(f)
+}
+
+library(lme4)
+df <- data.frame(y=rnorm(10),x=rep(c("a","b"), each = 5))
+df
+fit <- lm(y~0+x, data = df)
+summary(fit)
+fixef(fit)
+coef(fit)
+vcov(fit)
+
+f <- function(x, ...) {
+  x+1
+}

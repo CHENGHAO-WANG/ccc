@@ -8,11 +8,11 @@
 #'    \item
 #'  }
 #'  
-#'  
+#'  @param cell_type_padj adjust p-values for each sender-receiver pair or not
 
 ccc_analysis <- function(expression_matrix, metadata,
-                         cell_id = "cell_id", cell_type = "cell_type", group = "group", covar = NULL, cdr = TRUE,
-                         id = NULL, lmm_re = TRUE, logmm_re = TRUE,
+                         cell_id_col = "cell_id", cell_type_col = "cell_type", group_col = "group", covar_col = NULL, cdr = TRUE,
+                         id_col = NULL, lmm_re = TRUE, logmm_re = TRUE,
                          sender = NULL, receiver = NULL,
                          lr = c("omnipathr","ramilowski"),
                          multi_sub = c("minimum","arithmetic_mean","geometric_mean","min_avg_gene","min_rate_gene"),
@@ -20,11 +20,106 @@ ccc_analysis <- function(expression_matrix, metadata,
                          verbose = TRUE,
                          min_pct = 0.01, large_n = 2, min_avg_pct = 0,
                          min_cell = 10,
-                         threshold = 0,
-                         padj_method = "BH", sr_adj = TRUE,
-                         control_lm, control_logmm,
+                         threshold = 0, sep_prop = 0, sep_n = 0, sep_detection = TRUE,
+                         padj_method = "BH", cell_type_padj = TRUE,
+                         control_logm = list(),
+                         control_lmm = lme4::lmerControl() , control_logmm = list(),
+                         chunk_size = 10,
                          ...
 ) {
+  if (is.vector(contrast)) {
+    contrast <- matrix(contrast, nrow = 1L, dimnames = list(NULL, names(v)))
+  } else if (!is.matrix(contrast)) {
+    stop("'contrast' must be either a named vector or a matrix with column names.")
+  }
+  if (is.null(colnames(contrast))) {
+    stop("'contrast' must be either a named vector or a matrix with column names.")
+  }
+  if (qr(contrast)$rank < nrow(contrast)) {
+    stop("'contrast' must be full row rank")
+  }
+  
+  contrast <- contrast[, colSums(abs(contrast) > 0)]
+  
+  if (isFALSE(all(colnames(contrast) %in% unique(metadata[[group_col]])))) {
+    stop(paste0("'contrast' contains group levels that are not present in the \"",group_col,"\" column of 'metadata'."))
+  }
+  
+  multi_sub <- match.arg(multi_sub, choices = c("minimum","arithmetic_mean","geometric_mean","min_avg_gene","min_rate_gene"))
+  
+  err_msg <- " in 'covar_col'. Please use a different argument or rename it."
+  if ("id" %in% covar_col) {
+    stop(paste0("\"id\"",err_msg))
+  }
+  if ("group" %in% covar_col) {
+    stop(paste0("\"group\"",err_msg))
+  }
+  if ("cdr" %in% covar_col) {
+    stop(paste0("\"cdr\"",err_msg))
+  }
+  
+  if(any(is.na(expression_matrix))) {
+    stop("Missing values not allowed in expression matrix, please remove NA values.")
+  }
+  if(any(is.na(metadata))) {
+    stop("Missing values not allowed in metadata, please remove NA values.")
+  }
+  if(any(is.na(covar_col))) {
+    stop("Missing values not allowed in covar_col, please remove NA values.")
+  }
+  
+  if ("y" %in% colnames(metadata)) {
+    stop("\"y\" in column names of 'metadata'. Please rename it.")
+  }
+  if ("z" %in% colnames(metadata)) {
+    stop("\"z\" in column names of 'metadata'. Please rename it.")
+  }
+  
+  covar_exists <- covar_col %in% colnames(metadata)
+  if(!is.null(covar_col) && all(covar_exists)){
+    stop(paste0("The following columns specified in 'covar_col' do not exist in 'metadata': ", paste(covar_col[!covar_exists], collapse = ", ")))
+  }
+  if (isFALSE(group_col %in% colnames(metadata))) {
+    stop(paste0("'group_col' \"",group_col, "\" does not exist in 'metadata'."))
+  }
+  if (isFALSE(cell_id_col %in% colnames(metadata))) {
+    stop(paste0("'cell_id_col' \"",cell_id_col, "\" does not exist in 'metadata'."))
+  }
+  if (isFALSE(cell_type_col %in% colnames(metadata))) {
+    stop(paste0("'cell_type_col' \"",cell_type_col, "\" does not exist in 'metadata'."))
+  }
+  
+  if (isTRUE(lmm_re) || isTRUE(logmm_re)) {
+    if (is.null(id_col)) {
+      stop("'id_col' is not specified")
+    }
+    if (isFALSE(id_col %in% colnames(metadata))) {
+      stop(paste0("'id_col' \"",id_col, "\" does not exist in 'metadata'."))
+    }
+  }
+  if (isFALSE(lmm_re) && isFALSE(logmm_re) && !is.null(id_col)) {
+    warning("'id_col' is not NULL. This input will be ignored, because 'lmm_re' and 'logmm_re' are FALSE")
+    id_col <- NULL
+  }
+  
+  padj_method <- match.arg(padj_method, p.adjust.methods)
+  
+  
+  metadata <- rename_metadata(metadata = metadata,
+                              cell_id_col = cell_id_col, cell_type_col = cell_type_col,
+                              id_col = id_col, group_col = group_col)
+  num_ids <- metadata[, uniqueN("id")]
+  
+  if (isTRUE(sep_detection)) {
+    if (sep_prop < 0 || sep_prop > 1) {
+      stop("'sep_prop' must be between 0 and 1 (inclusive).")
+    }
+    if (sep_n < 0 || sep_n > num_ids) {
+      stop("'sep_n' must be between 0 and number of samples (inclusive).")
+    }
+  }
+  
+  
   
   
 }
@@ -34,13 +129,13 @@ ccc_analysis <- function(expression_matrix, metadata,
 
 
 
-rename_metadata <- function(metadata, cell_id, id, group, cell_type) {
+rename_metadata <- function(metadata, cell_id_col, id_col, group_col, cell_type_col) {
   metadata <- as.data.table(metadata)
-  if (is.null(id)) {
-    setnames(metadata, old = c(cell_id, group, cell_type), new = c("cell_id", "group", "cell_type"))
+  if (is.null(id_col)) {
+    setnames(metadata, old = c(cell_id_col, group_col, cell_type_col), new = c("cell_id", "group", "cell_type"))
     metadata[, id := group]
   } else {
-    setnames(metadata, old = c(cell_id, id, group, cell_type), new = c("cell_id", "id", "group", "cell_type"))
+    setnames(metadata, old = c(cell_id_col, id_col, group_col, cell_type_col), new = c("cell_id", "id", "group", "cell_type"))
   }
   return(metadata)
 }
@@ -50,9 +145,7 @@ rename_metadata <- function(metadata, cell_id, id, group, cell_type) {
 #' 
 #' 
 prep_lr <- function(lr) {
-  if (is.character(lr)) {
-    lr_name <- lr[1L]
-  } else if (is.data.frame(lr)) {
+  if (is.data.frame(lr)) {
     stopifnot(colnames(lr) == c("ligand","receptor"))
     lr_name <- "user"
     lr_user <- lr
@@ -67,13 +160,6 @@ prep_lr <- function(lr) {
                        data("ramilowski", envir = environment())
                        ramilowski
                      },
-                     "user" = lr_user,
-                     stop("'lr' should be \"omnipathr\" or \"ramilowski\" or a data.frame of ligand-receptor pairs")
-  )
-  
-  lr_table <- switch(EXPR = lr_name,
-                     "omnipathr" = lr.omnipathr(),
-                     "ramilowski" = lr.ramilowski(),
                      "user" = lr_user,
                      stop("'lr' should be \"omnipathr\" or \"ramilowski\" or a data.frame of ligand-receptor pairs")
   )
@@ -104,18 +190,7 @@ filter_cell_type <- function(metadata, sender, receiver, min_cell, contrast) {
     receiver <- unique(metadata$cell_type)
   }
   
-  # Apply contrast filtering
-  if (is.vector(contrast)) {
-    zero_groups <- names(contrast)[contrast == 0]
-  } else if (is.matrix(contrast)) {
-    zero_groups <- colnames(contrast)[colSums(contrast) == 0]
-  } else {
-    stop("'contrast' must be either a named vector or a matrix with column names.")
-  }
-  
-  if (length(zero_groups) > 0) {
-    metadata <- metadata[!group %in% zero_groups]
-  }
+  metadata <- metadata[group %in% colnames(contrast)]
   
   # # Check if any rows remain after contrast filtering
   # if (nrow(metadata) == 0) {
@@ -237,19 +312,660 @@ compute_cdr <- function(expression_matrix, metadata_subset, threshold) {
 
 
 
-run_analysis <- function(sender, receiver, lr_table, ){
+run_analysis2 <- function(sender, receiver, lr_table, ){
   # Create all possible combinations of sender and receiver
   sender_receiver_combinations <- expand.grid(sender = sender, receiver = receiver)
   
   # Merge with lr_table to get all possible combinations
-  result <- merge(sender_receiver_combinations, lr_table, by = NULL)
+  pairs4analysis <- merge(sender_receiver_combinations, lr_table, by = NULL)
   
   # Convert to data.table
-  result_dt <- data.table(result)
+  setDT(pairs4analysis)
+  npairs <- nrow(pairs4analysis)
+  
+  
+  future_lapply(seq(1L, nrow(pairs4analysis), by = chunk_size), FUN = run_analysis(i))
+  
+  run_analysis <- function(i) {
+    chunk <- pairs4analysis[i:min(i + chunk_size - 1L, npairs), ]
+    for (j in 1L:nrow(chunk)) {
+      sender1 <- chunk$sender[i]
+      ligand <- chunk$ligand[i]
+      receiver1 <- chunk$receiver[i]
+      receptor <- chunk$receptor[i]
+      
+      # Create copies of metadata_subset for sender and receiver
+      data_sender_ligand <- copy(metadata_subset)[cell_type == sender]
+      data_receiver_receptor <- copy(metadata_subset)[cell_type == receiver]
+      
+      # Handle single gene or multi-gene ligands and receptors
+      ligand_genes <- unlist(strsplit(ligand, "_"))
+      receptor_genes <- unlist(strsplit(receptor, "_"))
+      
+      # Subset expression matrix for ligands and receptors
+      ligand_expr_values <- expression_matrix[ligand_genes, data_sender_ligand$cell_id, drop = TRUE]
+      receptor_expr_values <- expression_matrix[receptor_genes, data_receiver_receptor$cell_id, drop = TRUE]
+      
+      # Function to compute expression value based on method
+      compute_expression_value <- function(expr_values, multi_sub) {
+        if (is.null(dim(expr_values))) return(expr_values)
+        
+        switch(
+          multi_sub,
+          "minimum" = apply(expr_values, 2L, min),
+          "arithmetic_mean" = colMeans(expr_values),
+          "geometric_mean" = apply(expr_values, 2L, FUN = function(x) prod(x)^(1 / length(x))),
+          "min_avg_gene" = {
+            gene_means <- rowMeans(expr_values)
+            min_gene <- names(which.min(gene_means))
+            expr_values[min_gene, , drop = TRUE]
+          }
+          "min_rate_gene" = {
+            gene_rates <- rowMeans(expr_values > threshold)
+            min_gene <- names(which.min(gene_rates))
+            expr_values[min_gene, , drop = TRUE]
+          }
+        )
+      }
+      
+      # Add expression column to metadata copies
+      data_sender_ligand[, y := compute_expression_value(ligand_expr_values, multi_sub)]
+      data_receiver_receptor[, y := compute_expression_value(receptor_expr_values, multi_sub)]
+      
+      # Compute expression rates
+      compute_expression_rate <- function(data_subset) {
+        sapply(metadata_subset$id, function(uid) {
+          mean(data_subset[id == uid, y] > threshold)
+        })
+      }
+      
+      ligand_expression_rates <- compute_expression_rate(data_sender_ligand)
+      receptor_expression_rates <- compute_expression_rate(data_receiver_receptor)
+      
+      # Check if the number of ids with both ligand and receptor expression rate >= min_pct is >= large_n
+      valid_ids <- sum((ligand_expression_rates >= min_pct) & (receptor_expression_rates >= min_pct))
+      if (valid_ids < large_n) {
+        #####################
+        # do something here
+        #####################
+        next
+      } 
+
+      ##
+      # Add indicator column
+      data_sender_ligand[, z := ifelse(y > threshold, 1, 0)]
+      data_receiver_receptor[, z := ifelse(y > threshold, 1, 0)]
+      
+      # Subset data
+      data_sender_ligand_1 <- data_sender_ligand[indicator == 1]
+      data_receiver_receptor_1 <- data_receiver_receptor[indicator == 1]
+      
+      # Define covariates
+      covar <- c(covar, if(isTRUE(cdr)) "cdr")
+
+      center_covar(dt = data_sender_ligand_1, covar = covar) -> covariates # The 4 data sets are different. But the column names are the same.
+      center_covar(dt = data_receiver_receptor_1, covar = covar)
+      center_covar(dt = data_sender_ligand, covar = covar)
+      center_covar(dt = data_receiver_receptor, covar = covar)
+      
+      covariates <- c("group", covar)
+      
+      # Define model formulas
+      fixed_effects <- paste(covariates, collapse = " + ")
+      formula_linear <- as.formula(paste("y ~ 0 +", fixed_effects))
+      formula_logistic <- as.formula(paste("z ~ 0 +", fixed_effects))
+      if (lmm_re) {
+        formula_linear <- as.formula(paste("y ~ 0 +", fixed_effects, "+ (1|id)"))
+      }
+      if (logmm_re) {
+        fixed_formula <- as.formula(paste("z ~ 0 +", fixed_effects))
+        random_formula <- as.formula("~ 1 | id")
+        formula_logistic <- list("fixed" = fixed_formula, "random" = random_formula)
+      }
+      
+      # Fit models
+      fit_linear <- function(data, formula) {
+        tryCatch({
+          if (isTRUE(lmm_re)) {
+            lmer(formula)
+          } else {
+            lm(formula)
+          }
+        }, error = function(e) {
+          return(error = e$message)
+        })
+      
+      }
+      fit_logistic <- function(data, formula) {
+        tryCatch({
+          cond <- isTRUE(sep_detection) && detect_re_separation(dt = data, z_col = "z", id_col = "id", num_ids = num_ids, sep_prop = sep_prop, sep_n = sep_n)
+          if (cond) {
+            stop("Complete or Quasi-complete separation detected.")
+          } else {
+            if (isTRUE(logmm_re)) {
+              mixed_model(fixed = formula$fixed, random = formula$random, family = binomial())
+            } else {
+              glm(formula, family = binomial())
+            }
+          }
+        }, error = function(e) {
+          return(error = e$message)
+        })
+      }
+
+      ##
+      fit.l.linear <- fit_linear(data = data_sender_ligand_1, formula = formula_linear)
+      fit.r.linear <- fit_linear(data = data_receiver_receptor_1, formula = formula_linear)
+      fit.l.logistic <- fit_logistic(data = data_sender_ligand, formula = formula_logistic)
+      fit.r.logistic <- fit_logistic(data = data_receiver_receptor, formula = formula_logistic)
+      
+      
+      
+    }
+  }
+ 
   
   
 }
 
+ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
+                                        contrast, re_lmm, re_logmm) {
+  
+  group_names <- colnames(contrast)
+  
+  if (!is.character(fit.l.linear) && !is.character(fit.r.linear)) {
+    if (isTRUE(re_lmm)) {
+      coef_l_lm <- fixef(fit.l.linear)
+      coef_r_lm <- fixef(fit.r.linear)
+    } else {
+      coef_l_lm <- stats::coef(fit.l.linear)
+      coef_r_lm <- stats::coef(fit.r.linear)
+    }
+    vcov_l_lm_group <- vcov(fit.l.linear)[group_names, group_names]
+    vcov_l_logm_group <- vcov(fit.l.logistic)[group_names, group_names]
+    test.linear <- TRUE
+  } else {
+    test.linear <- FALSE
+  }
+  if (!is.character(fit.l.logistic) && !is.character(fit.r.logistic)) {
+    if (isTRUE(re_logmm)) {
+      m_l <- marginal_coefs(fit.l.logistic, std_errors = TRUE, cores = 1L)
+      m_r <- marginal_coefs(fit.r.logistic, std_errors = TRUE, cores = 1L)
+      coef_l_logm <- m_l$betas
+      coef_r_logm <- m_l$betas
+      vcov_l_logm_group <- m_l$var_betas[group_names, group_names] 
+      vcov_r_logm_group <- m_r$var_betas[group_names, group_names]
+    } else {
+      coef_l_logm <- stats::coef(fit.l.logistic)
+      coef_r_logm <- stats::coef(fit.r.logistic)
+      vcov_l_logm_group <- vcov(fit.l.logistic)[group_names, group_names]
+      vcov_r_logm_group <- vcov(fit.r.logistic)[group_names, group_names]
+    }
+    test.logistic <- TRUE
+  } else {
+    test.logistic <- FALSE
+  }
+
+  # coef_l_lmm <- fixef(fit.l.lmm)
+  # coef_l_logmm <- fixef(fit.l.logmm)
+  # coef_r_lmm <- fixef(fit.r.lmm)
+  # coef_r_logmm <- fixef(fit.r.logmm)
+  
+  # Filter coefficients to only include group names
+  coef_l_lm <- coef_l_lm[names(coef_l_lm) %in% group_names]
+  coef_l_logm <- coef_l_logm[names(coef_l_logm) %in% group_names]
+  coef_r_lm <- coef_r_lm[names(coef_r_lm) %in% group_names]
+  coef_r_logm <- coef_r_logm[names(coef_r_logm) %in% group_names]
+  
+  # Ensure coefficients are named vectors
+  # if (is.null(names(coef_l_lmm))) names(coef_l_lmm) <- names(fixef(fit.l.lmm)[names(fixef(fit.l.lmm)) %in% group_names])
+  # if (is.null(names(coef_l_logmm))) names(coef_l_logmm) <- names(fixef(fit.l.logmm)[names(fixef(fit.l.logmm)) %in% group_names])
+  # if (is.null(names(coef_r_lmm))) names(coef_r_lmm) <- names(fixef(fit.r.lmm)[names(fixef(fit.r.lmm)) %in% group_names])
+  # if (is.null(names(coef_r_logmm))) names(coef_r_logmm) <- names(fixef(fit.r.logmm)[names(fixef(fit.r.logmm)) %in% group_names])
+  
+  # Reorder coefficients to match group_names order
+  coef_l_lmm <- coef_l_lmm[group_names]
+  coef_l_logmm <- coef_l_logmm[group_names]
+  coef_r_lmm <- coef_r_lmm[group_names]
+  coef_r_logmm <- coef_r_logmm[group_names]
+  
+  product_vector <- numeric(length(group_names))
+  names(product_vector) <- group_names
+  
+  for (group in group_names) {
+    product_vector[group] <- coef_l_lmm[group] * coef_r_lmm[group] * plogis(coef_l_logmm[group]) * plogis(coef_r_logmm[group])
+  }
+  
+  weighted_sum <- contrast %*% product_vector
+  
+  # Delta method for mean and covariance
+  gradient_matrix <- matrix(0, nrow = nrow(contrast), ncol = length(group_names) * 4)
+  
+  for (i in seq_len(nrow(contrast))) {
+    for (j in seq_along(group_names)) {
+      group <- group_names[j]
+      
+      ind_l_lmm <- which(names(coef_l_lmm) == group)
+      ind_l_logmm <- which(names(coef_l_logmm) == group) + length(group_names)
+      ind_r_lmm <- which(names(coef_r_lmm) == group) + length(group_names) * 2
+      ind_r_logmm <- which(names(coef_r_logmm) == group) + length(group_names) * 3
+      
+      gradient_matrix[i, ind_l_lmm] <- contrast[i, j] * coef_r_lmm[group] * plogis(coef_l_logmm[group]) * plogis(coef_r_logmm[group])
+      gradient_matrix[i, ind_l_logmm] <- contrast[i, j] * coef_l_lmm[group] * coef_r_lmm[group] * plogis(coef_r_logmm[group]) * dlogis(coef_l_logmm[group])
+      gradient_matrix[i, ind_r_lmm] <- contrast[i, j] * coef_l_lmm[group] * plogis(coef_l_logmm[group]) * plogis(coef_r_logmm[group])
+      gradient_matrix[i, ind_r_logmm] <- contrast[i, j] * coef_l_lmm[group] * coef_r_lmm[group] * plogis(coef_l_logmm[group]) * dlogis(coef_r_logmm[group])
+    }
+  }
+  
+  # Extract relevant parts of vcov matrices
+  # vcov_l_lmm_group <- vcov(fit.l.lmm)[group_names, group_names]
+  # vcov_l_logmm_group <- vcov(fit.l.logmm)[group_names, group_names]
+  # vcov_r_lmm_group <- vcov(fit.r.lmm)[group_names, group_names]
+  # vcov_r_logmm_group <- vcov(fit.r.logmm)[group_names, group_names]
+  
+  vcov_combined <- bdiag(vcov_l_lmm_group, vcov_l_logmm_group, vcov_r_lmm_group, vcov_r_logmm_group)
+  
+  cov_weighted_sum <- gradient_matrix %*% as.matrix(vcov_combined) %*% t(gradient_matrix)
+  
+  mean_weighted_sum <- weighted_sum
+  
+  test_statistic <- tryCatch({
+    solve(cov_weighted_sum) %*% mean_weighted_sum
+  }, error = function(e) {
+    MASS::ginv(cov_weighted_sum) %*% mean_weighted_sum
+  })
+  
+  p_value <- pchisq(test_statistic, df = nrow(contrast), lower.tail = FALSE)
+  
+  return(list(mean_weighted_sum = mean_weighted_sum, 
+              test_statistic = test_statistic, 
+              p_value = p_value))
+}
+
+
+# compute_expression_rates <- function(chunk, metadata_subset, expression_matrix, threshold, min_pct, large_n, method = "min") {
+#   library(data.table)
+#   
+#   for (i in 1:nrow(chunk)) {
+#     sender <- chunk$sender[i]
+#     ligand <- chunk$ligand[i]
+#     receiver <- chunk$receiver[i]
+#     receptor <- chunk$receptor[i]
+#     
+#     # Create copies of metadata_subset for sender and receiver
+#     data_sender_ligand <- copy(metadata_subset)[cell_type == sender]
+#     data_receiver_receptor <- copy(metadata_subset)[cell_type == receiver]
+#     
+#     # if (nrow(data_sender_ligand) == 0 || nrow(data_receiver_receptor) == 0) next  # Skip if no matching cells
+#     
+#     # Handle single gene or multi-gene ligands and receptors
+#     ligand_genes <- unlist(strsplit(ligand, "_"))
+#     receptor_genes <- unlist(strsplit(receptor, "_"))
+#     
+#     # Subset expression matrix for ligands and receptors
+#     ligand_expr_values <- expression_matrix[ligand_genes, data_sender_ligand$cell_id, drop = FALSE]
+#     receptor_expr_values <- expression_matrix[receptor_genes, data_receiver_receptor$cell_id, drop = FALSE]
+#     
+#     # Function to compute expression value based on method
+#     compute_expression_value <- function(expr_values, method) {
+#       if (length(dim(expr_values)) == 0) return(expr_values)
+#       
+#       switch(
+#         method,
+#         "min" = apply(expr_values, 2, min, na.rm = TRUE),
+#         "mean" = colMeans(expr_values, na.rm = TRUE),
+#         "lowest" = {
+#           gene_rates <- colSums(expr_values > threshold, na.rm = TRUE) / ncol(expr_values)
+#           min_gene <- names(which.min(gene_rates))
+#           expr_values[min_gene, ]
+#         },
+#         stop("Invalid 'method'. Choose from 'min', 'mean', or 'lowest'.")
+#       )
+#     }
+#     
+#     # Add expression column to metadata copies
+#     data_sender_ligand[, expression := compute_expression_value(ligand_expr_values, method)]
+#     data_receiver_receptor[, expression := compute_expression_value(receptor_expr_values, method)]
+#     
+#     # Compute expression rates
+#     unique_ids <- unique(c(data_sender_ligand$id, data_receiver_receptor$id))
+#     
+#     compute_expression_rate <- function(data_subset) {
+#       sapply(unique_ids, function(uid) {
+#         sum(data_subset[id == uid, expression] > threshold, na.rm = TRUE) / nrow(data_subset[id == uid])
+#       })
+#     }
+#     
+#     ligand_expression_rates <- compute_expression_rate(data_sender_ligand)
+#     receptor_expression_rates <- compute_expression_rate(data_receiver_receptor)
+#     
+#     # Check if the number of ids with both ligand and receptor expression rate >= min_pct is >= large_n
+#     valid_ids <- sum((ligand_expression_rates >= min_pct) & (receptor_expression_rates >= min_pct), na.rm = TRUE)
+#     if (valid_ids < large_n) next
+#     
+#     # Execute some code (Replace this with your actual code)
+#     print(paste("Processing ligand:", ligand, "and receptor:", receptor))
+#   }
+# }
+
+# library(data.table)
+# library(lme4)
+# 
+# fit_models <- function(data_sender_ligand, data_receiver_receptor, threshold, id = NULL, 
+#                        lmm_re = FALSE, logmm_re = FALSE, covar = NULL) {
+#   
+#   # Add indicator column
+#   data_sender_ligand[, indicator := ifelse(expression > threshold, 1, 0)]
+#   data_receiver_receptor[, indicator := ifelse(expression > threshold, 1, 0)]
+#   
+#   # Subset data
+#   data_sender_ligand_1 <- data_sender_ligand[indicator == 1]
+#   data_receiver_receptor_1 <- data_receiver_receptor[indicator == 1]
+#   
+#   # Determine model types
+#   if (is.null(id_col)) {
+#     lmm_re <- FALSE
+#     logmm_re <- FALSE
+#   }
+#   
+#   # Define covariates
+#   covariates <- c("group", covar)
+#   covariates <- covariates[!is.na(covariates)]
+#   
+#   # Center covariates
+#   center_covar <- function(dt, covars) {
+#     for (cov in covars) {
+#       if (cov %in% names(dt) && is.numeric(dt[[cov]])) {
+#         dt[, (cov) := scale(get(cov), center = TRUE, scale = FALSE)]
+#       }
+#     }
+#   }
+#   center_covariates(data_sender_ligand_1, covariates)
+#   center_covariates(data_receiver_receptor_1, covariates)
+#   center_covariates(data_sender_ligand, covariates)
+#   center_covariates(data_receiver_receptor, covariates)
+#   
+#   # Define model formulas
+#   fixed_effects <- paste(covariates, collapse = " + ")
+#   formula_linear <- as.formula(paste("expression ~ 0 +", fixed_effects))
+#   formula_logistic <- as.formula(paste("indicator ~ 0 +", fixed_effects))
+#   
+#   if (lmm_re) {
+#     formula_linear <- as.formula(paste("expression ~ 0 +", fixed_effects, "+ (1|id)"))
+#   }
+#   if (logmm_re) {
+#     formula_logistic <- as.formula(paste("indicator ~ 0 +", fixed_effects, "+ (1|id)"))
+#   }
+#   
+#   # Fit models
+#   fit_model <- function(data, formula, family = NULL) {
+#     tryCatch({
+#       if (is.null(family)) {
+#         if ("id" %in% names(data) && lmm_re) {
+#           lmer(formula, data = data)
+#         } else {
+#           lm(formula, data = data)
+#         }
+#       } else {
+#         if ("id" %in% names(data) && logmm_re) {
+#           glmer(formula, data = data, family = family)
+#         } else {
+#           glm(formula, data = data, family = family)
+#         }
+#       }
+#     }, error = function(e) {
+#       return(list(error = e$message))
+#     })
+#   }
+#   
+#   # Run models
+#   results <- list(
+#     linear_sender = fit_model(data_sender_ligand_1, formula_linear),
+#     linear_receiver = fit_model(data_receiver_receptor_1, formula_linear),
+#     logistic_sender = fit_model(data_sender_ligand, formula_logistic, binomial),
+#     logistic_receiver = fit_model(data_receiver_receptor, formula_logistic, binomial)
+#   )
+#   
+#   return(results)
+# }
+
+
+library(future.apply)
+plan(multisession)
+
+library(progressr)
+handlers(global = TRUE)
+handlers("progress", "beepr")
+
+my_fcn <- function(xs) {
+  p <- progressor(along = xs)
+  future_lapply(xs, function(x, ...) {
+    Sys.sleep(6.0-x)
+    p(sprintf("x=%g", x))
+    sqrt(x)
+  })
+}
+
+my_fcn(1:5)
+
+library(data.table)
+
+# Create a data.table with double vectors
+dt <- data.table(
+  id = 1:3, 
+  values = list(c(1/3, 2/3), c(pi, exp(1)), c(sqrt(2), log(2)))
+)
+
+# Save as CSV
+fwrite(dt, "output.csv")
+
+# Read the CSV file
+dt_read <- fread("output.csv")
+
+# Check structure
+str(dt_read)
+
+dt_read[, values := lapply(values, function(x) as.numeric(strsplit(x, "\\|")[[1]]))]
+
+# Check the updated structure
+str(dt_read)
+
+dt_read
+
+dt <- data.table(
+  id = 1:3, 
+  values = list(c(1/3, 2/3), c(pi, exp(1)), c(sqrt(2), log(2), 5))
+)
+# Find the maximum length of vectors
+max_len <- max(lengths(dt$values))
+
+# Expand list-column into separate columns
+dt_wide <- dt[, paste0("value_", seq_len(max_len)) := transpose(values)]
+
+# Remove the original 'values' column
+dt_wide[, values := NULL]
+
+# Check the result
+print(dt_wide)
+
+library(lme4)
+library(detectseparation)
+# Generate example data
+set.seed(123)
+data <- data.frame(
+  y = rbinom(100, 1, 0.5),    # Binary outcome (0 or 1)
+  x = factor(rep(1:2, each = 50)),  # Categorical predictor
+  group = factor(rep(1:4, each = 25))  # Random effect grouping (10 groups)
+)
+
+# Fit logistic mixed-effects model
+model <- glmer(y ~ x + (1 | group), data = data, family = binomial)
+
+# Print model summary
+summary(model)
+
+glm(y ~ x, data = data, family = binomial, method = 'detect_separation')
 
 
 
+set.seed(123)
+
+# Generate example data
+data <- data.frame(
+  y = rbinom(100, 1, 0.5),  # Binary outcome
+  x = factor(rep(1:2, each = 50)),  # Categorical predictor
+  group = factor(rep(1:10, each = 10))  # Random effect grouping (10 groups)
+)
+
+# Force three clusters (e.g., groups 1, 3, and 5) to have y = 0
+data$y[data$group %in% c(1, 3, 5)] <- 0
+
+# Fit logistic mixed-effects model
+model <- glmer(y ~ x + (1 | group), data = data, family = binomial)
+
+# Print model summary
+summary(model)
+
+library(data.table)
+
+
+
+library(numDeriv)
+func2 <- function(x) c(sin(x), cos(x))
+x <- (0:1)*2*pi
+jacobian(func2, x)
+jacobian(func2, x, "complex")
+
+func3 <- function(x) {
+  x[1]*x[2]-x[3]*x[4]
+}
+
+jacobian(func3, 1:4)
+
+
+library(glmmTMB)  # Ensure necessary libraries are loaded
+library(Matrix)
+library(numDeriv)  # For delta method calculations
+
+compute_test_stat <- function(fit.l.lmm, fit.l.logmm, fit.r.lmm, fit.r.logmm, contrast) {
+  # Extract fixed effect estimates for 'group'
+  beta_l_lmm <- fixef(fit.l.lmm)["group"]
+  beta_r_lmm <- fixef(fit.r.lmm)["group"]
+  beta_l_logmm <- fixef(fit.l.logmm)["group"]
+  beta_r_logmm <- fixef(fit.r.logmm)["group"]
+  
+  # Ensure matching order with contrast columns
+  group_levels <- colnames(contrast)
+  beta_l_lmm <- beta_l_lmm[group_levels]
+  beta_r_lmm <- beta_r_lmm[group_levels]
+  beta_l_logmm <- beta_l_logmm[group_levels]
+  beta_r_logmm <- beta_r_logmm[group_levels]
+  
+  # Compute transformed parameter values
+  inv_logit <- function(x) exp(x) / (1 + exp(x))
+  param_vector <- beta_l_lmm * beta_r_lmm * inv_logit(beta_l_logmm) * inv_logit(beta_r_logmm)
+  
+  # Compute weighted sum
+  weighted_sum <- contrast %*% param_vector
+  
+  # Compute mean of weighted sum
+  mean_vector <- colSums(contrast * param_vector)
+  
+  # Compute covariance using the delta method
+  cov_matrix <- matrix(0, nrow = nrow(contrast), ncol = nrow(contrast))
+  jacobian_fun <- function(params) contrast %*% params
+  
+  param_estimates <- c(beta_l_lmm, beta_r_lmm, beta_l_logmm, beta_r_logmm)
+  vcov_combined <- bdiag(vcov(fit.l.lmm), vcov(fit.r.lmm), vcov(fit.l.logmm), vcov(fit.r.logmm))
+  jacobian <- jacobian(jacobian_fun, param_estimates)
+  cov_weighted_sum <- jacobian %*% vcov_combined %*% t(jacobian)
+  
+  # Compute test statistic and p-value
+  test_stat <- t(mean_vector) %*% solve(cov_weighted_sum) %*% mean_vector
+  p_value <- 1 - pchisq(test_stat, df = length(mean_vector))
+  
+  list(mean = mean_vector, test_stat = test_stat, p_value = p_value)
+}
+
+library(lme4)
+library(MASS)
+
+calculate_weighted_sum_test <- function(fit.l.lmm, fit.l.logmm, fit.r.lmm, fit.r.logmm, contrast) {
+  
+  group_names <- colnames(contrast)
+  
+  coef_l_lmm <- fixef(fit.l.lmm)
+  coef_l_logmm <- fixef(fit.l.logmm)
+  coef_r_lmm <- fixef(fit.r.lmm)
+  coef_r_logmm <- fixef(fit.r.logmm)
+  
+  # Filter coefficients to only include group names
+  coef_l_lmm <- coef_l_lmm[names(coef_l_lmm) %in% group_names]
+  coef_l_logmm <- coef_l_logmm[names(coef_l_logmm) %in% group_names]
+  coef_r_lmm <- coef_r_lmm[names(coef_r_lmm) %in% group_names]
+  coef_r_logmm <- coef_r_logmm[names(coef_r_logmm) %in% group_names]
+  
+  # Ensure coefficients are named vectors
+  if (is.null(names(coef_l_lmm))) names(coef_l_lmm) <- names(fixef(fit.l.lmm)[names(fixef(fit.l.lmm)) %in% group_names])
+  if (is.null(names(coef_l_logmm))) names(coef_l_logmm) <- names(fixef(fit.l.logmm)[names(fixef(fit.l.logmm)) %in% group_names])
+  if (is.null(names(coef_r_lmm))) names(coef_r_lmm) <- names(fixef(fit.r.lmm)[names(fixef(fit.r.lmm)) %in% group_names])
+  if (is.null(names(coef_r_logmm))) names(coef_r_logmm) <- names(fixef(fit.r.logmm)[names(fixef(fit.r.logmm)) %in% group_names])
+  
+  # Reorder coefficients to match group_names order
+  coef_l_lmm <- coef_l_lmm[group_names]
+  coef_l_logmm <- coef_l_logmm[group_names]
+  coef_r_lmm <- coef_r_lmm[group_names]
+  coef_r_logmm <- coef_r_logmm[group_names]
+  
+  product_vector <- numeric(length(group_names))
+  names(product_vector) <- group_names
+  
+  for (group in group_names) {
+    product_vector[group] <- coef_l_lmm[group] * coef_r_lmm[group] * plogis(coef_l_logmm[group]) * plogis(coef_r_logmm[group])
+  }
+  
+  weighted_sum <- contrast %*% product_vector
+  
+  # Delta method for mean and covariance
+  gradient_matrix <- matrix(0, nrow = nrow(contrast), ncol = length(group_names) * 4)
+  
+  for (i in seq_len(nrow(contrast))) {
+    for (j in seq_along(group_names)) {
+      group <- group_names[j]
+      
+      ind_l_lmm <- which(names(coef_l_lmm) == group)
+      ind_l_logmm <- which(names(coef_l_logmm) == group) + length(group_names)
+      ind_r_lmm <- which(names(coef_r_lmm) == group) + length(group_names) * 2
+      ind_r_logmm <- which(names(coef_r_logmm) == group) + length(group_names) * 3
+      
+      gradient_matrix[i, ind_l_lmm] <- contrast[i, j] * coef_r_lmm[group] * plogis(coef_l_logmm[group]) * plogis(coef_r_logmm[group])
+      gradient_matrix[i, ind_l_logmm] <- contrast[i, j] * coef_l_lmm[group] * coef_r_lmm[group] * plogis(coef_r_logmm[group]) * dlogis(coef_l_logmm[group])
+      gradient_matrix[i, ind_r_lmm] <- contrast[i, j] * coef_l_lmm[group] * plogis(coef_l_logmm[group]) * plogis(coef_r_logmm[group])
+      gradient_matrix[i, ind_r_logmm] <- contrast[i, j] * coef_l_lmm[group] * coef_r_lmm[group] * plogis(coef_l_logmm[group]) * dlogis(coef_r_logmm[group])
+    }
+  }
+  
+  # Extract relevant parts of vcov matrices
+  vcov_l_lmm_group <- vcov(fit.l.lmm)[group_names, group_names]
+  vcov_l_logmm_group <- vcov(fit.l.logmm)[group_names, group_names]
+  vcov_r_lmm_group <- vcov(fit.r.lmm)[group_names, group_names]
+  vcov_r_logmm_group <- vcov(fit.r.logmm)[group_names, group_names]
+  
+  vcov_combined <- bdiag(vcov_l_lmm_group, vcov_l_logmm_group, vcov_r_lmm_group, vcov_r_logmm_group)
+  
+  cov_weighted_sum <- gradient_matrix %*% as.matrix(vcov_combined) %*% t(gradient_matrix)
+  
+  mean_weighted_sum <- weighted_sum
+  
+  test_statistic <- tryCatch({
+    solve(cov_weighted_sum) %*% mean_weighted_sum
+  }, error = function(e) {
+    MASS::ginv(cov_weighted_sum) %*% mean_weighted_sum
+  })
+  
+  p_value <- pchisq(test_statistic, df = nrow(contrast), lower.tail = FALSE)
+  
+  return(list(mean_weighted_sum = mean_weighted_sum, 
+              test_statistic = test_statistic, 
+              p_value = p_value))
+}
