@@ -1,83 +1,5 @@
 
 
-center_covar <- function(dt, covar) {
-  dt_copy <- copy(dt) # Avoid modifying original data.table
-  
-  categorical_covar <- covar[sapply(dt_copy[, covar, with = FALSE], function(col) is.factor(col) || is.character(col))]
-  
-  # Convert categorical covar columns to numeric (one-hot encoding)
-  for (col_name in categorical_covar) {
-    col <- dt_copy[[col_name]]
-    levels_col <- unique(col)
-    for (level in levels_col) {
-      new_col_name <- paste0(col_name, "_", level)
-      dt_copy[, (new_col_name) := as.integer(col == level)]
-    }
-    dt_copy[, (col_name) := NULL] # Remove original categorical column
-    #Add new one hot encoded columns to the covar list, and remove the original column.
-    covar <- c(covar[covar != col_name], names(dt_copy)[startsWith(names(dt_copy), paste0(col_name, "_"))])
-  }
-  
-  # Center specified columns
-  for (col_name in covar) {
-    dt_copy[, (col_name) := scale(dt_copy[[col_name]], center = TRUE, scale = FALSE)]
-  }
-  
-  return(dt_copy)
-}
-
-preprocess_dt_center_covar <- function(dt, covar, make_copy = TRUE) {
-  if (make_copy) {
-    dt_copy <- copy(dt)
-  } else {
-    dt_copy <- dt
-  }
-  
-  covar_exists <- covar %in% names(dt_copy)
-  if (!all(covar_exists)) {
-    stop(paste0("The following columns specified in covar do not exist in the data.table: ", paste(covar[!covar_exists], collapse = ", ")))
-  }
-  
-  categorical_covar <- covar[sapply(dt_copy[, covar, with = FALSE], function(col) is.factor(col) || is.character(col))]
-  
-  for (col_name in categorical_covar) {
-    col <- dt_copy[[col_name]]
-    levels_col <- unique(col)
-    for (level in levels_col) {
-      new_col_name <- paste0(col_name, "_", level)
-      dt_copy[, (new_col_name) := as.integer(col == level)]
-    }
-    dt_copy[, (col_name) := NULL]
-    covar <- c(covar[covar != col_name], names(dt_copy)[startsWith(names(dt_copy), paste0(col_name, "_"))])
-  }
-  
-  for (col_name in covar) {
-    dt_copy[, (col_name) := scale(dt_copy[[col_name]], center = TRUE, scale = FALSE)]
-  }
-  
-  return(dt_copy)
-}
-
-# Example Usage:
-dt <- data.table(
-  A = factor(c("a", "b", "a")),
-  B = c(1, 2, 3),
-  C = c("x", "y", "z"),
-  D = 4:7,
-  E = 8:11
-)
-
-covar_cols <- c("A", "B", "E")
-
-# Default: make_copy = TRUE
-preprocessed_dt_copy <- preprocess_dt_center_covar(dt, covar_cols)
-print(preprocessed_dt_copy)
-print(dt) # Original 'dt' is unchanged
-
-# make_copy = FALSE
-preprocessed_dt_no_copy <- preprocess_dt_center_covar(dt, covar_cols, make_copy = FALSE)
-print(preprocessed_dt_no_copy)
-print(dt) # Original 'dt' is now modified
 
 library(data.table)
 
@@ -202,9 +124,3 @@ detect_all_zeros <- function(dt, id_col, id) {
 }
 
 
-vcov_lm <- function(fit, group_names) {
-  
-}
-
-
-vcov_logm <- function(fit, group_names)
