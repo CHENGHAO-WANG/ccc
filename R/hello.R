@@ -431,6 +431,10 @@ f <- function(x,y=NULL) {
 }
 f(1)
 
+f <- function(x){
+  x+y
+}
+
 a <- if(F) 1
 a
 
@@ -454,3 +458,62 @@ vcov(fit)
 f <- function(x, ...) {
   x+1
 }
+
+
+m1 <- matrix(c(1,-1), nrow = 1)
+m2 <- matrix(1:2,nrow = 2)
+v <- m1%*%m2
+
+library(sandwich)
+x <- sin(1:100)
+y <- 1 + x + rnorm(100)
+## model fit and HC3 covariance
+fm <- lm(y ~ x)
+vcovHC(fm)
+## usual covariance matrix
+vcovHC(fm, type = "const")
+vcov(fm)
+sigma2 <- sum(residuals(lm(y ~ x))^2)/98
+sigma2 * solve(crossprod(cbind(1, x)))
+
+library(lme4)
+fm1 <- lmer(Reaction ~ Days + (Days | Subject), sleepstudy)
+fm2 <- lmer(Reaction ~ Days + (Days | Subject), sleepstudy, REML = F)
+gm1 <- glmer(cbind(incidence, size - incidence) ~ period + (1 | herd),
+             data = cbpp, family = binomial)
+(v1 <- vcov(fm1))
+v2 <- vcov(fm1, correlation = TRUE)
+v2
+vcov(fm1, correlation = FALSE)
+lme4::vcov.merMod(fm1)
+v3 <- lme4::vcov.merMod(fm1, correlation = FALSE)
+
+m <- fm1
+sand <- sandwich(m, bread. = bread.lmerMod(m, full = TRUE),
+                 meat. = meat(m, level = 2))
+
+dat <- data.frame(y=rbinom(10,1,.5),x=rep(0:1,each=5))
+dat <- data.frame(y=rbinom(10,1,.5),x=rnorm(10))
+gm <- glm(y~x,data=dat, family = "binomial")
+
+dat <- data.frame(y=rbinom(100,1,.5),x=rnorm(100))
+gm <- glm(y~x,data=dat, family = "binomial")
+
+# Number of observations
+n <- 100  
+
+# Generate categorical variables
+x <- factor(sample(c("A", "B"), n, replace = TRUE))  
+sample <- factor(sample(c("S1", "S2", "S3", "S4"), n, replace = TRUE))  
+
+# Generate normally distributed response variable
+y <- rnorm(n, mean = 0, sd = 1)  
+x1 <- runif(n, min = 0, max = 1) # Uniformly distributed between 0 and 1
+x2 <- runif(n, min = 0, max = 1) # Uniformly distributed between 0 and 1
+x3 <- runif(n, min = 0, max = 1)
+# Create data table
+data <- data.table(y = y, x = x, sample = sample, x1 = x1, x2 = x2,x3=x3)
+# Create data frame
+
+m. <- lmer(y~x+x1+x2+x3+(1|sample), data = data)
+m2 <- lm(y~x+x1+x2+x3, data = data)

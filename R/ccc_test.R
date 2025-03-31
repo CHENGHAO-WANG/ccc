@@ -10,13 +10,19 @@
 #'  
 #'  @param cell_type_padj adjust p-values for each sender-receiver pair or not
 
+library(data.table)
+library(lme4)
+library(sandwich)
+library(clubSandwich)
+
+
 ccc_analysis <- function(expression_matrix, metadata,
                          cell_id_col = "cell_id", cell_type_col = "cell_type", group_col = "group", covar_col = NULL, cdr = TRUE,
                          id_col = NULL, lmm_re = TRUE, logmm_re = TRUE,
                          sender = NULL, receiver = NULL,
                          lr = c("omnipathr","ramilowski"),
                          multi_sub = c("minimum","arithmetic_mean","geometric_mean","min_avg_gene","min_rate_gene"),
-                         contrast,
+                         contrast, sandwich = FALSE,
                          verbose = TRUE,
                          min_pct = 0.01, large_n = 2, min_avg_pct = 0,
                          min_cell = 10,
@@ -323,8 +329,9 @@ run_analysis2 <- function(sender, receiver, lr_table, ){
   setDT(pairs4analysis)
   npairs <- nrow(pairs4analysis)
   
-  
   future_lapply(seq(1L, nrow(pairs4analysis), by = chunk_size), FUN = run_analysis(i))
+  
+  unique_ids <- unique(metadata_subset[,id])
   
   run_analysis <- function(i) {
     chunk <- pairs4analysis[i:min(i + chunk_size - 1L, npairs), ]
@@ -335,8 +342,8 @@ run_analysis2 <- function(sender, receiver, lr_table, ){
       receptor <- chunk$receptor[i]
       
       # Create copies of metadata_subset for sender and receiver
-      data_sender_ligand <- copy(metadata_subset)[cell_type == sender]
-      data_receiver_receptor <- copy(metadata_subset)[cell_type == receiver]
+      data_sender_ligand <- metadata_subset[cell_type == sender]
+      data_receiver_receptor <- metadata_subset[cell_type == receiver]
       
       # Handle single gene or multi-gene ligands and receptors
       ligand_genes <- unlist(strsplit(ligand, "_"))
@@ -397,8 +404,8 @@ run_analysis2 <- function(sender, receiver, lr_table, ){
       data_receiver_receptor[, z := ifelse(y > threshold, 1, 0)]
       
       # Subset data
-      data_sender_ligand_1 <- data_sender_ligand[indicator == 1]
-      data_receiver_receptor_1 <- data_receiver_receptor[indicator == 1]
+      data_sender_ligand_1 <- data_sender_ligand[z == 1]
+      data_receiver_receptor_1 <- data_receiver_receptor[z == 1]
       
       # Define covariates
       covar <- c(covar, if(isTRUE(cdr)) "cdr")
@@ -423,13 +430,20 @@ run_analysis2 <- function(sender, receiver, lr_table, ){
         formula_logistic <- list("fixed" = fixed_formula, "random" = random_formula)
       }
       
+      
+        
       # Fit models
       fit_linear <- function(data, formula) {
         tryCatch({
-          if (isTRUE(lmm_re)) {
-            lmer(formula)
+          cond <- detect_all_zeros(dt = data, id_col = "id", id = unique_ids)
+          if (cond) {
+            stop("Too few cells expressing the ligand/receptor gene for fitting a linear model.")
           } else {
-            lm(formula)
+            if (isTRUE(lmm_re)) {
+              lmer(formula)
+            } else {
+              lm(formula)
+            }
           }
         }, error = function(e) {
           return(error = e$message)
@@ -469,7 +483,7 @@ run_analysis2 <- function(sender, receiver, lr_table, ){
 }
 
 ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
-                                        contrast, re_lmm, re_logmm) {
+                                        contrast, re_lmm, re_logmm, sandwich) {
   
   group_names <- colnames(contrast)
   
@@ -477,20 +491,28 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
     if (isTRUE(re_lmm)) {
       coef_l_lm <- fixef(fit.l.linear)
       coef_r_lm <- fixef(fit.r.linear)
+      if (isTRUE(sandwich)) {
+        vcov_l_lm_group <- vcovCR(fit.l.linear, type = "CR2")[group_names, group_names]
+        vcov_r_lm_group <- vcovCR(fit.r.linear, type = "CR2")[group_names, group_names]
+      }
     } else {
       coef_l_lm <- stats::coef(fit.l.linear)
       coef_r_lm <- stats::coef(fit.r.linear)
+      if (isTRUE(sandwich)) {
+        vcov_l_lm_group <- vcovHC(fit.l.linear, type = "HC3")[group_names, group_names]
+        vcov_r_lm_group <- vcovHC(fit.r.linear, type = "HC3")[group_names, group_names]
+      }
     }
     vcov_l_lm_group <- vcov(fit.l.linear)[group_names, group_names]
-    vcov_l_logm_group <- vcov(fit.l.logistic)[group_names, group_names]
+    vcov_r_lm_group <- vcov(fit.r.linear)[group_names, group_names]
     test.linear <- TRUE
   } else {
     test.linear <- FALSE
   }
   if (!is.character(fit.l.logistic) && !is.character(fit.r.logistic)) {
     if (isTRUE(re_logmm)) {
-      m_l <- marginal_coefs(fit.l.logistic, std_errors = TRUE, cores = 1L)
-      m_r <- marginal_coefs(fit.r.logistic, std_errors = TRUE, cores = 1L)
+      m_l <- marginal_coefs(fit.l.logistic, std_errors = TRUE, cores = 1L, sandwich = sandwich)
+      m_r <- marginal_coefs(fit.r.logistic, std_errors = TRUE, cores = 1L, sandwich = sandwich)
       coef_l_logm <- m_l$betas
       coef_r_logm <- m_l$betas
       vcov_l_logm_group <- m_l$var_betas[group_names, group_names] 
@@ -498,8 +520,13 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
     } else {
       coef_l_logm <- stats::coef(fit.l.logistic)
       coef_r_logm <- stats::coef(fit.r.logistic)
-      vcov_l_logm_group <- vcov(fit.l.logistic)[group_names, group_names]
-      vcov_r_logm_group <- vcov(fit.r.logistic)[group_names, group_names]
+      if (isTRUE(sandwich)) {
+        vcov_l_logm_group <- vcovHC(fit.l.logistic, type = "HC3")[group_names, group_names]
+        vcov_r_logm_group <- vcovHC(fit.r.logistic, type = "HC3")[group_names, group_names]
+      } else {
+        vcov_l_logm_group <- vcov(fit.l.logistic)[group_names, group_names]
+        vcov_r_logm_group <- vcov(fit.r.logistic)[group_names, group_names]
+      }
     }
     test.logistic <- TRUE
   } else {
@@ -524,16 +551,16 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
   # if (is.null(names(coef_r_logmm))) names(coef_r_logmm) <- names(fixef(fit.r.logmm)[names(fixef(fit.r.logmm)) %in% group_names])
   
   # Reorder coefficients to match group_names order
-  coef_l_lmm <- coef_l_lmm[group_names]
-  coef_l_logmm <- coef_l_logmm[group_names]
-  coef_r_lmm <- coef_r_lmm[group_names]
-  coef_r_logmm <- coef_r_logmm[group_names]
+  coef_l_lm <- coef_l_lm[group_names]
+  coef_l_logm <- coef_l_logm[group_names]
+  coef_r_lm <- coef_r_lm[group_names]
+  coef_r_logm <- coef_r_logm[group_names]
   
   product_vector <- numeric(length(group_names))
   names(product_vector) <- group_names
   
   for (group in group_names) {
-    product_vector[group] <- coef_l_lmm[group] * coef_r_lmm[group] * plogis(coef_l_logmm[group]) * plogis(coef_r_logmm[group])
+    product_vector[group] <- coef_l_lm[group] * coef_r_lm[group] * plogis(coef_l_logm[group]) * plogis(coef_r_logm[group])
   }
   
   weighted_sum <- contrast %*% product_vector

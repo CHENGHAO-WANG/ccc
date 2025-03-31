@@ -179,3 +179,32 @@ detect_re_separation <- function(dt, z_col, id_col, num_ids = NULL, sep_prop = 0
   
   return(detection)
 }
+
+detect_all_zeros <- function(dt, z_col, id_col) {
+  setDT(dt)
+  dt[, all(get(z_col) == 0), by = get(id_col)][, any(V1)]
+}
+
+dt1 <- data.table(
+    id = c(1, 1, 2, 2, 3, 3),
+    z = c(0, 0, 1, 1, 0, 0)
+  )
+dt2 <- data.table(
+    id = c(1, 1, 2, 2, 3, 3),
+    z = c(1, 0, 1, 1, 0, 1)
+  )
+
+detect_all_zeros <- function(dt, id_col, id) {
+  setDT(dt)
+  
+  unique_id_col <- unique(dt[[id_col]]) # Get unique values from id_col
+  !all(id %in% unique_id_col)
+}
+
+
+vcov_lm <- function(fit, group_names) {
+  
+}
+
+
+vcov_logm <- function(fit, group_names)
