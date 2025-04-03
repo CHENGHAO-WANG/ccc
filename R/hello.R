@@ -435,6 +435,24 @@ f <- function(x){
   x+y
 }
 
+g <- function(x,y) {
+  f <- function(x) {
+    x+y
+  }
+  f(x)
+}
+g(1,2)
+g <- function(x,y) {
+  f(x)
+  f <- function(x) {
+    x+y
+  }
+
+}
+g(1,2)
+
+
+
 a <- if(F) 1
 a
 
@@ -517,3 +535,42 @@ data <- data.table(y = y, x = x, sample = sample, x1 = x1, x2 = x2,x3=x3)
 
 m. <- lmer(y~x+x1+x2+x3+(1|sample), data = data)
 m2 <- lm(y~x+x1+x2+x3, data = data)
+
+dt1 <- data.table(x=1)
+dt2 <- data.table(y=3)
+dt3 <- NULL
+l <- list(dt1, dt2, dt3)
+l <- list(dt1, dt2, dt3, rbindlist(list()))
+rbindlist(l[!is.na(l)], fill = T)
+rbindlist(l, fill = T)
+
+dt3 <- data.table(x=1, u=1:3)
+dt3 <- data.table(x=1:2, u=1:3)
+
+
+
+
+results <- list()
+for (i in 1:10) {
+  temp_dt <- data.table(x=1:5, y=i)
+  temp_dt[,z:=x*y]
+  results[[i]] <- temp_dt
+}
+result1 <- rbindlist(results)
+result1
+
+library(foreach)
+library(doParallel)
+registerDoParallel(cores = 2)
+results_p <- foreach(i=1:10, .packages = "data.table") %dopar% {
+  temp_dt <- data.table(x=1:5,y=i)
+  temp_dt[, z:=x*y]
+  temp_dt
+}
+stopImplicitCluster()
+result2 <- rbindlist(results_p)
+result2
+
+h <- function(n) {
+  setDTthreads(n)
+}

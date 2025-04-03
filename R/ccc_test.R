@@ -31,8 +31,11 @@ ccc_analysis <- function(expression_matrix, metadata,
                          control_logm = list(),
                          control_lmm = lme4::lmerControl() , control_logmm = list(),
                          chunk_size = 10,
-                         ...
+                         nthreads = 1
 ) {
+  old_nthreads <- getDTthreads()
+  setDTthreads(nthreads)
+  
   if (is.vector(contrast)) {
     contrast <- matrix(contrast, nrow = 1L, dimnames = list(NULL, names(v)))
   } else if (!is.matrix(contrast)) {
@@ -315,6 +318,7 @@ run_analysis2 <- function(sender, receiver, lr_table, ){
   
   run_analysis <- function(i) {
     chunk <- pairs4analysis[i:min(i + chunk_size - 1L, npairs), ]
+    results.i <- list()
     for (j in 1L:nrow(chunk)) {
       sender1 <- chunk$sender[i]
       ligand <- chunk$ligand[i]
@@ -372,9 +376,6 @@ run_analysis2 <- function(sender, receiver, lr_table, ){
       # Check if the number of ids with both ligand and receptor expression rate >= min_pct is >= large_n
       valid_ids <- sum((ligand_expression_rates >= min_pct) & (receptor_expression_rates >= min_pct))
       if (valid_ids < large_n) {
-        #####################
-        # do something here
-        #####################
         next
       } 
 
@@ -453,9 +454,13 @@ run_analysis2 <- function(sender, receiver, lr_table, ){
       fit.l.logistic <- fit_logistic(data = data_sender_ligand, formula = formula_logistic)
       fit.r.logistic <- fit_logistic(data = data_receiver_receptor, formula = formula_logistic)
       
-      
+      results.i[[length(results.i) + 1L]] <- ccc_test(fit.l.linear = fit.l.linear, fit.l.logistic = fit.l.logistic,
+                                                      fit.r.linear = fit.r.linear, fit.r.logistic = fit.r.logistic,
+                                                      contrast = contrast, re_lmm = re_lmm, re_logmm = re_logmm,
+                                                      sandwich = sandwich)
       
     }
+    rbindlist(results.i, fill = TRUE)
   }
  
   
@@ -518,11 +523,25 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
   # coef_r_lmm <- fixef(fit.r.lmm)
   # coef_r_logmm <- fixef(fit.r.logmm)
   
+  if (isTRUE(test.linear)) {
+    coef_l_lm <- coef_l_lm[names(coef_l_lm) %in% group_names]
+    coef_r_lm <- coef_r_lm[names(coef_r_lm) %in% group_names]
+    coef_l_lm <- coef_l_lm[group_names]
+    coef_r_lm <- coef_r_lm[group_names]
+  }
+  if (isTRUE(test.logistic)) {
+    coef_l_logm <- coef_l_logm[names(coef_l_logm) %in% group_names]
+    coef_r_logm <- coef_r_logm[names(coef_r_logm) %in% group_names]
+    coef_l_logm <- coef_l_logm[group_names]
+    coef_r_logm <- coef_r_logm[group_names]
+    
+  }
+  
   # Filter coefficients to only include group names
-  coef_l_lm <- coef_l_lm[names(coef_l_lm) %in% group_names]
-  coef_l_logm <- coef_l_logm[names(coef_l_logm) %in% group_names]
-  coef_r_lm <- coef_r_lm[names(coef_r_lm) %in% group_names]
-  coef_r_logm <- coef_r_logm[names(coef_r_logm) %in% group_names]
+  # coef_l_lm <- coef_l_lm[names(coef_l_lm) %in% group_names]
+  # coef_l_logm <- coef_l_logm[names(coef_l_logm) %in% group_names]
+  # coef_r_lm <- coef_r_lm[names(coef_r_lm) %in% group_names]
+  # coef_r_logm <- coef_r_logm[names(coef_r_logm) %in% group_names]
   
   # Ensure coefficients are named vectors
   # if (is.null(names(coef_l_lmm))) names(coef_l_lmm) <- names(fixef(fit.l.lmm)[names(fixef(fit.l.lmm)) %in% group_names])
@@ -531,22 +550,32 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
   # if (is.null(names(coef_r_logmm))) names(coef_r_logmm) <- names(fixef(fit.r.logmm)[names(fixef(fit.r.logmm)) %in% group_names])
   
   # Reorder coefficients to match group_names order
-  coef_l_lm <- coef_l_lm[group_names]
-  coef_l_logm <- coef_l_logm[group_names]
-  coef_r_lm <- coef_r_lm[group_names]
-  coef_r_logm <- coef_r_logm[group_names]
+  # coef_l_lm <- coef_l_lm[group_names]
+  # coef_l_logm <- coef_l_logm[group_names]
+  # coef_r_lm <- coef_r_lm[group_names]
+  # coef_r_logm <- coef_r_logm[group_names]
   
-  product_vector <- numeric(length(group_names))
-  names(product_vector) <- group_names
-  
-  for (group in group_names) {
-    product_vector[group] <- coef_l_lm[group] * coef_r_lm[group] * plogis(coef_l_logm[group]) * plogis(coef_r_logm[group])
+  if (isTRUE(test.linear)) {
+    product_vector_linear <- numeric(length(group_names))
+    names(product_vector_linear) <- group_names
+    product_vector_linear <- coef_l_lm * coef_r_lm
   }
   
-  weighted_sum <- contrast %*% product_vector
+  product_vector_hurdle <- product_vector_linear <- product_vector_logisitc <- numeric(length(group_names))
+  names(product_vector_hurdle) <- names(product_vector_linear) <- names(product_vector_logisitc) <- group_names
+  
+  for (group in group_names) {
+    product_vector_hurdle[group] <- coef_l_lm[group] * coef_r_lm[group] * plogis(coef_l_logm[group]) * plogis(coef_r_logm[group])
+    product_vector_linear[group] <- coef_l_lm[group] * coef_r_lm[group]
+    product_vector_logisitc[group] <- plogis(coef_l_logm[group]) * plogis(coef_r_logm[group])
+  }
+  
+  effect_size_hurdle <- contrast %*% product_vector_hurdle
+  effect_size_linear <- contrast %*% product_vector_linear
+  effect_size_logistic <- contrast %*% product_vector_logisitc
   
   # Delta method for mean and covariance
-  gradient_matrix_full <- matrix(0, nrow = nrow(contrast), ncol = length(group_names) * 4L)
+  gradient_matrix_hurdle <- matrix(0, nrow = nrow(contrast), ncol = length(group_names) * 4L)
   
   for (i in seq_len(nrow(contrast))) {
     for (j in seq_along(group_names)) {
@@ -557,10 +586,10 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
       ind_r_lm <- which(names(coef_r_lm) == group) + length(group_names) * 2L
       ind_r_logm <- which(names(coef_r_logm) == group) + length(group_names) * 3L
       
-      gradient_matrix_full[i, ind_l_lm] <- contrast[i, j] * coef_r_lm[group] * plogis(coef_l_logm[group]) * plogis(coef_r_logm[group])
-      gradient_matrix_full[i, ind_l_logm] <- contrast[i, j] * coef_l_lm[group] * coef_r_lm[group] * plogis(coef_r_logm[group]) * dlogis(coef_l_logm[group])
-      gradient_matrix_full[i, ind_r_lm] <- contrast[i, j] * coef_l_lm[group] * plogis(coef_l_logm[group]) * plogis(coef_r_logm[group])
-      gradient_matrix_full[i, ind_r_logm] <- contrast[i, j] * coef_l_lm[group] * coef_r_lm[group] * plogis(coef_l_logm[group]) * dlogis(coef_r_logm[group])
+      gradient_matrix_hurdle[i, ind_l_lm] <- contrast[i, j] * coef_r_lm[group] * plogis(coef_l_logm[group]) * plogis(coef_r_logm[group])
+      gradient_matrix_hurdle[i, ind_l_logm] <- contrast[i, j] * coef_l_lm[group] * coef_r_lm[group] * plogis(coef_r_logm[group]) * dlogis(coef_l_logm[group])
+      gradient_matrix_hurdle[i, ind_r_lm] <- contrast[i, j] * coef_l_lm[group] * plogis(coef_l_logm[group]) * plogis(coef_r_logm[group])
+      gradient_matrix_hurdle[i, ind_r_logm] <- contrast[i, j] * coef_l_lm[group] * coef_r_lm[group] * plogis(coef_l_logm[group]) * dlogis(coef_r_logm[group])
     }
   }
   
@@ -570,11 +599,9 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
   # vcov_r_lmm_group <- vcov(fit.r.lmm)[group_names, group_names]
   # vcov_r_logmm_group <- vcov(fit.r.logmm)[group_names, group_names]
   
-  vcov_combined <- bdiag(vcov_l_lm_group, vcov_l_logm_group, vcov_r_lm_group, vcov_r_logm_group)
+  vcov_hurdle <- bdiag(vcov_l_lm_group, vcov_l_logm_group, vcov_r_lm_group, vcov_r_logm_group)
   
-  cov_weighted_sum <- gradient_matrix %*% as.matrix(vcov_combined) %*% t(gradient_matrix)
-  
-  mean_weighted_sum <- weighted_sum
+  cov_effect_size_hurdle <- gradient_matrix_hurdle %*% as.matrix(vcov_hurdle) %*% t(gradient_matrix_hurdle)
   
   # Delta method | linear model
   gradient_matrix_linear <- matrix(0, nrow = nrow(contrast), ncol = length(group_names) * 2L)
@@ -586,12 +613,14 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
       ind_l_lm <- which(names(coef_l_lm) == group)
       ind_r_lm <- which(names(coef_r_lm) == group) + length(group_names)
       
-      gradient_matrix_full[i, ind_l_lm] <- contrast[i, j] * coef_r_lm[group] 
-      gradient_matrix_full[i, ind_r_lm] <- contrast[i, j] * coef_l_lm[group] 
+      gradient_matrix_linear[i, ind_l_lm] <- contrast[i, j] * coef_r_lm[group] 
+      gradient_matrix_linear[i, ind_r_lm] <- contrast[i, j] * coef_l_lm[group] 
     }
   }
   
+  vcov_linear <- bdiag(vcov_l_lm_group, vcov_r_lm_group)
   
+  cov_effect_size_linear <- gradient_matrix_linear %*% as.matrix(vcov_linear) %*% t(gradient_matrix_linear)
   
   # Delta method | logistic model
   gradient_matrix_logistic <- matrix(0, nrow = nrow(contrast), ncol = length(group_names) * 2L)
@@ -603,23 +632,39 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
       ind_l_logm <- which(names(coef_l_logm) == group)
       ind_r_logm <- which(names(coef_r_logm) == group) + length(group_names)
       
-      gradient_matrix_full[i, ind_l_logm] <- contrast[i, j] * plogis(coef_r_logm[group]) * dlogis(coef_l_logm[group])
-      gradient_matrix_full[i, ind_r_logm] <- contrast[i, j] * plogis(coef_l_logm[group]) * dlogis(coef_r_logm[group])
+      gradient_matrix_logistic[i, ind_l_logm] <- contrast[i, j] * plogis(coef_r_logm[group]) * dlogis(coef_l_logm[group])
+      gradient_matrix_logistic[i, ind_r_logm] <- contrast[i, j] * plogis(coef_l_logm[group]) * dlogis(coef_r_logm[group])
     }
   }
   
+  vcov_logistic <- bdiag(vcov_l_logm_group, vcov_r_logm_group)
   
-  test_statistic <- tryCatch({
-    solve(cov_weighted_sum) %*% mean_weighted_sum
-  }, error = function(e) {
-    MASS::ginv(cov_weighted_sum) %*% mean_weighted_sum
-  })
+  cov_effect_size_logistic <- gradient_matrix_logistic %*% as.matrix(vcov_hurdle) %*% t(gradient_matrix_logistic)
   
-  p_value <- pchisq(test_statistic, df = nrow(contrast), lower.tail = FALSE)
+  # test_statistic <- tryCatch({
+  #   solve(cov_weighted_sum) %*% mean_weighted_sum
+  # }, error = function(e) {
+  #   MASS::ginv(cov_weighted_sum) %*% mean_weighted_sum
+  # })
   
-  return(list(mean_weighted_sum = mean_weighted_sum, 
-              test_statistic = test_statistic, 
-              p_value = p_value))
+  ### testing
+  
+  test_stat_hurdle <- t(effect_size_hurdle) %*% solve(cov_effect_size_hurdle) %*% effect_size_hurdle
+  p_value_hurdle <- pchisq(test_stat_hurdle, df = nrow(contrast), lower.tail = FALSE)
+  test_stat_linear <- t(effect_size_linear) %*% solve(cov_effect_size_linear) %*% effect_size_linear
+  p_value_linear <- pchisq(test_stat_linear, df = nrow(contrast), lower.tail = FALSE)
+  test_stat_logistic <- t(effect_size_logistic) %*% solve(cov_effect_size_logistic) %*% effect_size_logistic
+  p_value_logistic <- pchisq(test_stat_logistic, df = nrow(contrast), lower.tail = FALSE)
+  test_stat_2part <- test_stat_linear + test_stat_logistic
+  p_value_2part <- pchisq(test_stat_2part, df = nrow(contrast) * 2L, lower.tail = FALSE)
+  
+  # return(list(mean_weighted_sum = mean_weighted_sum, 
+  #             test_statistic = test_statistic, 
+  #             p_value = p_value))
+  
+  dt.result
+  
+  
 }
 
 
