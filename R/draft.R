@@ -396,3 +396,35 @@ calculate_weighted_sum_test <- function(fit.l.lmm, fit.l.logmm, fit.r.lmm, fit.r
               test_statistic = test_statistic, 
               p_value = p_value))
 }
+
+### check required arguments
+check_required_args <- function(f=sys.function(), mc=match.call()) {
+  fmls <- formals(f)
+  required_args <- names(fmls)[sapply(fmls, is.symbol)]
+  user_args <- names(mc)[-1]
+  missing_required <- setdiff(required_args, user_args)
+  
+  missing_required
+}
+
+h <- function(x,y) {
+  missing_args <- check_required_args(f=sys.function(),mc=match.call())
+  if (length(missing_args)>0) {
+    stop("no")
+  }
+  #x+y
+}
+h(1)
+
+hh <- function(x,y) {
+  x+y
+}
+
+# intercell_network <- OmnipathR::intercell_network(ligand_receptor = TRUE, high_confidence = TRUE, simplify = TRUE)
+# omnipathr <- data.frame(ligand=intercell_network$source_genesymbol,receptor=intercell_network$target_genesymbol)
+# save(omnipathr, file = "omnipathr.rda")
+
+
+# 
+# oplan <- plan(multisession, workers = 2)
+# on.exit(plan(oplan), add = TRUE)

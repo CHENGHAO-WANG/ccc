@@ -1,12 +1,13 @@
 Package: ccc
 Type: Package
-Title: What the Package Does (Title Case)
+Title: Identifying Differential Cell-Cell Communications from Single-Cell RNA-Sequencing Data
 Version: 0.1.0
-Author: Who wrote it
-Maintainer: The package maintainer <yourself@somewhere.net>
+Authors@R: c(
+    person("Chenghao", "Wang", email = "wangchenghaochn@gmail.com", role = c("aut", "cre")),
+    person("Di", "Wu", role = "aut"))
 Description: More about what it does (maybe more than one line)
     Use four spaces when indenting paragraphs within the Description.
-License: What license is it under?
+License: GPL (>= 3)
 Encoding: UTF-8
 LazyData: true
-Imports: dplyr, lme4, svMisc
+Imports: data.table, lme4, GLMMadaptive, assertthat, sandwich, clubSandwich, future, future.apply, progressr

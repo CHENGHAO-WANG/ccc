@@ -574,3 +574,400 @@ result2
 h <- function(n) {
   setDTthreads(n)
 }
+
+dt <- data.table()
+dt[, new_col := 1]
+dt[, vec_col := list(list(c(1, 2, 3)))]
+dt[, col2 := list(c(1:3))]
+
+dt <- data.table(new_col = 1, vec_col = list(c(1, 2, 3)))
+
+# Extract the vector into separate columns
+vec_dt <- data.table(t(unlist(dt$vec_col)))
+
+# Optionally rename the new columns
+setnames(vec_dt, paste0("vec_col_", seq_len(ncol(vec_dt))))
+
+# Combine with the original data.table (without vec_col)
+dt_final <- cbind(dt[, .(new_col)], vec_dt)
+
+print(dt_final)
+
+centre <- function(x, type) {
+  switch(type,
+         mean = mean(x),
+         median = median(x),
+         trimmed = mean(x, trim = .1),
+  stop("fku"))
+}
+x <- rcauchy(10)
+
+f <- function(x) {
+  x
+  sys.function()
+  }
+f(1)
+formals(f(1))
+
+f <- function(x,y=1,z) {
+  mc <- match.call()
+  fmls <- formals(sys.function())
+  required_args <- names(fmls)[sapply(fmls, is.symbol)]
+  user_args <- names(mc)[-1]
+  missing_required <- setdiff(required_args, user_args)
+  
+  missing_required
+  #user_args
+}
+f()
+f(1,2)
+f(1,2,4)
+
+g <- function(x) {
+  1
+}
+g()
+
+
+f2 <- function(f=sys.function()) {
+  f
+}
+f2()
+f3 <- function(){
+  f2()
+  
+}
+f3()
+
+message("a",
+        "b")
+
+f <- function(x) {
+  assertthat::assert_that(assertthat::is.flag(x))
+  invisible(x)
+}
+
+
+f <- function(x) {
+  if (x %% 3 == 0) {
+    warning("hey")
+  }
+  x
+}
+
+g <- function(xs) {
+  for (x in xs) {
+    f(x)
+  }
+} 
+
+xs <- 1:7
+g(xs)
+
+suppressWarnings(g(xs))
+
+do_something <- function(x) {
+  if (x %% 3 == 0) {
+    warning("ahhh")
+  }
+  if (x %% 2 == 0) {
+    warning("shit")
+  }
+  x
+}
+things <- 1:7
+
+warnings_list <- list()
+
+for (i in seq_along(things)) {
+  this_warning <- NULL
+  
+  result <- withCallingHandlers({
+    # Your code that might produce a warning
+    risky_result <- do_something(things[[i]])
+  }, warning = function(w) {
+    this_warning <<- conditionMessage(w)
+    invokeRestart("muffleWarning")  # suppress the warning
+  })
+  
+  warnings_list[[i]] <- this_warning
+}
+warnings_list
+
+results_list <- list()
+warnings_list <- list()
+errors_list <- list()
+
+for (i in seq_along(things)) {
+  #thing_name <- names(things)[i]  # or paste0("item_", i)
+  thing_name <- paste0("things",i)
+  
+  # Initialize an empty list to collect warnings for this iteration
+  these_warnings <- list()
+  this_error <- NULL
+  this_result <- NULL
+  
+  # Wrap the function call with tryCatch and warning handler
+  this_result <- tryCatch(
+    withCallingHandlers({
+      # Call the potentially warning-raising function
+      do_something(things[[i]])
+    }, warning = function(w) {
+      # Each warning gets added to the list
+      these_warnings[[length(these_warnings) + 1]] <<- conditionMessage(w)
+      invokeRestart("muffleWarning")  # Muffles the warning output
+    }),
+    error = function(e) {
+      # Capture any errors and set the result to NA
+      this_error <<- conditionMessage(e)
+      return(NA)
+    }
+  )
+  
+  # Store the result of the function call
+  results_list[[thing_name]] <- this_result
+  
+  # If there were any warnings, store them in the warnings list
+  if (length(these_warnings) > 0) {
+    warnings_list[[thing_name]] <- these_warnings
+  }
+  
+  # If there was an error, store the error message
+  if (!is.null(this_error)) {
+    errors_list[[thing_name]] <- this_error
+  }
+}
+warnings_list
+
+
+
+
+outer <- function() {
+  x <- 1
+  inner <- function() {
+    x <<- 2
+  }
+  inner()
+  x
+}
+
+outer()  # returns 1
+x         # this will be 2 in the global environment now!
+
+g <- function() {
+  x <<- 2
+}
+h <- function() {
+  g()
+}
+h()
+
+
+func <- function(x) {
+  if (x %% 3 == 0) {
+    stop("oh no")
+  }
+  x
+}
+
+xs <- 1:7
+re <- list()
+e.list <- list()
+for (x in xs) {
+  re[[x]] <- tryCatch(func(x), error = function(e) {
+    e.list[[x]] <<- e$message
+    })
+}
+re
+e.list
+
+f1 <- function() {
+  return()
+}
+f1()
+f2 <- function() {
+  NULL
+}
+f2()
+
+tryCatch({
+  warning("wwww")
+  stop("eeee")
+}, warning = function(w) {
+  w$message
+}, error = function(e) {
+  e$message
+})
+
+f <- function() {
+  x <- 1
+}
+
+
+f <- function(x) {
+  l[[1]] <- x
+}
+l <- list()
+f(1)
+
+f <- function(x) {
+  l[[1]] <<- x
+}
+l <- list()
+f(1)
+
+g <- function(x) {
+  f <- function(x) {
+    l[[1]] <<- x
+  }
+  l <- list()
+  f(1)
+}
+g(1)
+
+
+library(future.apply)
+plan(multisession)
+
+library(progressr)
+handlers(global = TRUE)
+oldh <- handlers("cli")
+
+my_fcn <- function(xs) {
+  p <- progressor(along = xs)
+  y <- 1
+  future_lapply(xs, function(x, ...) {
+    Sys.sleep(6.0-x)
+    #p(sprintf("x=%g", x))
+    p(class="sticky")
+    sqrt(x+y)
+  })
+}
+
+my_fcn(1:5)
+
+library(data.table)
+
+# Create a data.table with double vectors
+dt <- data.table(
+  id = 1:3, 
+  values = list(c(1/3, 2/3), c(pi, exp(1)), c(sqrt(2), log(2)))
+)
+
+# Save as CSV
+fwrite(dt, "output.csv")
+
+# Read the CSV file
+dt_read <- fread("output.csv")
+
+# Check structure
+str(dt_read)
+
+dt_read[, values := lapply(values, function(x) as.numeric(strsplit(x, "\\|")[[1]]))]
+
+# Check the updated structure
+str(dt_read)
+
+dt_read
+
+dt <- data.table(
+  id = 1:3, 
+  values = list(c(1/3, 2/3), c(pi, exp(1)), c(sqrt(2), log(2), 5))
+)
+# Find the maximum length of vectors
+max_len <- max(lengths(dt$values))
+
+# Expand list-column into separate columns
+dt_wide <- dt[, paste0("value_", seq_len(max_len)) := transpose(values)]
+
+# Remove the original 'values' column
+dt_wide[, values := NULL]
+
+# Check the result
+print(dt_wide)
+
+library(lme4)
+library(detectseparation)
+# Generate example data
+set.seed(123)
+data <- data.frame(
+  y = rbinom(100, 1, 0.5),    # Binary outcome (0 or 1)
+  x = factor(rep(1:2, each = 50)),  # Categorical predictor
+  group = factor(rep(1:4, each = 25))  # Random effect grouping (10 groups)
+)
+
+# Fit logistic mixed-effects model
+model <- glmer(y ~ x + (1 | group), data = data, family = binomial)
+
+# Print model summary
+summary(model)
+
+glm(y ~ x, data = data, family = binomial, method = 'detect_separation')
+
+
+
+set.seed(123)
+
+# Generate example data
+data <- data.frame(
+  y = rbinom(100, 1, 0.5),  # Binary outcome
+  x = factor(rep(1:2, each = 50)),  # Categorical predictor
+  group = factor(rep(1:10, each = 10))  # Random effect grouping (10 groups)
+)
+
+# Force three clusters (e.g., groups 1, 3, and 5) to have y = 0
+data$y[data$group %in% c(1, 3, 5)] <- 0
+
+# Fit logistic mixed-effects model
+model <- glmer(y ~ x + (1 | group), data = data, family = binomial)
+
+# Print model summary
+summary(model)
+
+library(data.table)
+
+
+dt <- data.table(x=1:3)
+f <- function(d) {
+  d[,y := 1:3]
+  d
+}
+f(dt)
+
+g <- function(d) {
+  d[,y := 1:3]
+  setDF(d)
+}
+g(dt)
+
+iris
+
+dd <- iris
+
+h <- function(dd) {
+  setDT(dd)
+  dd[, xx := Sepal.Length * Sepal.Width]
+  setDF(dd)
+  setDF(dd)
+  list(a=dd)
+}
+res <- h(dd = dd)
+h <- function(dd) {
+  setDT(dd)
+  dd[, xx := Sepal.Length * Sepal.Width]
+  setDF(dd)
+}
+
+res2 <- h(dd)
+
+dd <- as.data.frame(iris)
+class(dd)
+h2 <- function(dd) {
+  setDT(dd)
+  dd[, xx := Sepal.Length * Sepal.Width]
+  
+}
+
+res3 <- h2(dd)
+head(dd)
+class(dd)
