@@ -5,6 +5,7 @@
 #' @importFrom lme4 lmer
 #' @importFrom GLMMadaptive mixed_model
 #' @import progressr
+#' @importFrom assertthat assert_that is.flag
 #' 
 #' @param multi_sub it 
 #'  \itemize{
@@ -35,28 +36,42 @@ ccc_analysis <- function(expression_matrix, metadata, contrast,
   setDTthreads(nthreads)
   on.exit(setDTthreads(old_nthreads), add = TRUE)
   
-  assertthat::assert_that(assertthat::is.flag(verbose))
+  assert_that(is.flag(verbose))
   
   if (verbose) {
-    if (!progressr::handlers(global = NA) && interactive()) {
-      # If no progressr bar settings are configured, then set cli as the default.
-      progressr::handlers(global = TRUE)
-      ohandlers <- progressr::handlers('cli')
-      on.exit(progressr::handlers(ohandlers), add = TRUE)
-      # on.exit(progressr::handlers(global = FALSE), add = TRUE)
-      message(
-        "Info: No global progress bars were found; the cli handler has been enabled. ",
-        "See `vignette('ccc-intro')` for how to customize the progress bar settings."
-      )
+    if (interactive()) {
+      if (!handlers(global = NA)) {
+        handlers(global = TRUE)
+        handlers('cli')
+        message(
+          "Info: No global progress bars were found; the cli handler has been enabled. ",
+          "See `vignette('ccc-intro')` for how to customize the progress bar settings."
+        )
+      } 
     }
+    # if (!progressr::handlers(global = NA) && interactive()) {
+    #   # If no progressr bar settings are configured, then set cli as the default.
+    #   progressr::handlers(global = TRUE)
+    #   ohandlers <- progressr::handlers('cli')
+    #   # if (length(ohandlers) == 0) {
+    #   #   on.exit(progressr::handlers())
+    #   # }
+    #   on.exit(progressr::handlers(global = FALSE), add = TRUE)
+    #   on.exit(progressr::handlers(ohandlers), add = TRUE)
+    #   
+    #   message(
+    #     "Info: No global progress bars were found; the cli handler has been enabled. ",
+    #     "See `vignette('ccc-intro')` for how to customize the progress bar settings."
+    #   )
+    # }
   }
   
-  assertthat::assert_that(assertthat::is.flag(cdr))
-  assertthat::assert_that(assertthat::is.flag(lmm_re))
-  assertthat::assert_that(assertthat::is.flag(logmm_re))
-  assertthat::assert_that(assertthat::is.flag(sandwich))
-  assertthat::assert_that(assertthat::is.flag(sep_detection))
-  assertthat::assert_that(assertthat::is.flag(cell_type_padj))
+  assert_that(is.flag(cdr))
+  assert_that(is.flag(lmm_re))
+  assert_that(is.flag(logmm_re))
+  assert_that(is.flag(sandwich))
+  assert_that(is.flag(sep_detection))
+  assert_that(is.flag(cell_type_padj))
   
   required_args <- c('expression_matrix', 'metadata', 'contrast')
   passed_args <- names(match.call())[-1]
@@ -142,13 +157,11 @@ ccc_analysis <- function(expression_matrix, metadata, contrast,
     id_col <- NULL
   }
   
-  if (verbose) {
-    if (is.null(sender)) {
-      message("'sender' is not specified. All cell types will be considered as potential senders in the analysis.")
-    }
-    if (is.null(receiver)) {
-      message("'receiver' is not specified. All cell types will be considered as potential receivers in the analysis.")
-    }
+  if (is.null(sender)) {
+    message("'sender' is not specified. All cell types will be considered as potential senders in the analysis.")
+  }
+  if (is.null(receiver)) {
+    message("'receiver' is not specified. All cell types will be considered as potential receivers in the analysis.")
   }
   
   padj_method <- match.arg(padj_method, p.adjust.methods)
@@ -218,11 +231,15 @@ ccc_analysis <- function(expression_matrix, metadata, contrast,
   npairs <- nrow(pairs4analysis)
   unique_ids <- unique(metadata_subset[,id])
   i_s <- seq(1L, nrow(pairs4analysis), by = chunk_size)
-  p <- progressr::progressor(along = i_s)
+  if (verbose) {
+    p <- progressr::progressor(along = i_s)
+  }
   
   run_analysis <- function(i) {
     chunk <- pairs4analysis[i:min(i + chunk_size - 1L, npairs), ]
-    p()
+    if (verbose) {
+      p()
+    }
     
     results.summary <- results.test <- results.error <- results.warning <- results.message <- list()
     for (j in 1L:nrow(chunk)) {
@@ -314,31 +331,107 @@ ccc_analysis <- function(expression_matrix, metadata, contrast,
       
       
       # Fit models
-      fit_linear <- function(data, formula, name) {
+      # fit_linear <- function(data, formula, name) {
+      #   warnings. <- list()
+      #   messages. <- list()
+      #   fit <- tryCatch(
+      #     withCallingHandlers({
+      #     cond <- detect_all_zeros(dt = data, id_col = "id", id = unique_ids)
+      #     if (cond) {
+      #       stop("Too few cells expressing the ligand/receptor gene for fitting a linear model.")
+      #     } else {
+      #       if (isTRUE(lmm_re)) {
+      #         lmer(formula, data = data, control = control_lmm)
+      #       } else {
+      #         lm(formula, data = data)
+      #       }
+      #     }
+      #   }, warning = function(w) {
+      #     warnings.[[length(warnings.) + 1L]] <<- w$message
+      #     invokeRestart("muffleWarning")
+      #   }, message = function(m) {
+      #     messages.[[length(messages.) + 1L]] <<- m$message
+      #     invokeRestart("muffleMessage")
+      #   }), error = function(e) {
+      #     error_messages[[name]] <<- e$message
+      #     return(NULL)
+      #   })
+      #   if (length(warnings.) > 0) {
+      #     warning_messages[[name]] <<- warnings.
+      #   }
+      #   if (length(messages.) > 0) {
+      #     the_messages[[name]] <<- messages.
+      #   }
+      #   fit
+      # }
+      # 
+      # fit_logistic <- function(data, formula, name) {
+      #   warnings. <- list()
+      #   fit <- tryCatch(
+      #     withCallingHandlers({
+      #     cond <- isTRUE(sep_detection) && detect_re_separation(dt = data, z_col = "z", id_col = "id", num_ids = num_ids, sep_prop = sep_prop, sep_n = sep_n)
+      #     if (cond) {
+      #       stop("Complete or Quasi-complete separation detected.")
+      #     } else {
+      #       if (isTRUE(logmm_re)) {
+      #         mixed_model(fixed = formula$fixed, random = formula$random, family = binomial(), data = data, control = control_logmm)
+      #       } else {
+      #         glm(formula, family = binomial(), data = data, control = control_logm)
+      #       }
+      #     }
+      #   }, warning = function(w) {
+      #     warnings.[[length(warnings.) + 1L]] <<- w$message
+      #     invokeRestart("muffleWarning")
+      #   }), error = function(e) {
+      #     error_messages[[name]] <<- e$message
+      #     return(NULL)
+      #   })
+      #   if (length(warnings.) > 0) {
+      #     warning_messages[[name]] <<- warnings.
+      #   }
+      #   fit
+      # }
+      
+      fit_model <- function(part, data, formula, name) {
+        stopifnot(part == "linear" || part == "logistic")
         warnings. <- list()
         messages. <- list()
         fit <- tryCatch(
           withCallingHandlers({
-          cond <- detect_all_zeros(dt = data, id_col = "id", id = unique_ids)
-          if (cond) {
-            stop("Too few cells expressing the ligand/receptor gene for fitting a linear model.")
-          } else {
-            if (isTRUE(lmm_re)) {
-              lmer(formula, data = data, control = control_lmm)
-            } else {
-              lm(formula, data = data)
+            if (part == "linear") {
+              cond <- detect_all_zeros(dt = data, id_col = "id", id = unique_ids)
+              if (cond) {
+                stop("Too few cells expressing the ligand/receptor gene for fitting a linear model.")
+              } else {
+                if (isTRUE(lmm_re)) {
+                  lmer(formula, data = data, control = control_lmm)
+                } else {
+                  lm(formula, data = data)
+                }
+              }
             }
-          }
-        }, warning = function(w) {
-          warnings.[[length(warnings.) + 1L]] <<- w$message
-          invokeRestart("muffleWarning")
-        }, message = function(m) {
-          messages.[[length(messages.) + 1L]] <<- m$message
-          invokeRestart("muffleMessage")
-        }), error = function(e) {
-          error_messages[[name]] <<- e$message
-          return(NULL)
-        })
+            if (part == "logistic") {
+              cond <- isTRUE(sep_detection) && detect_re_separation(dt = data, z_col = "z", id_col = "id", num_ids = num_ids, sep_prop = sep_prop, sep_n = sep_n)
+              if (cond) {
+                stop("Complete or Quasi-complete separation detected.")
+              } else {
+                if (isTRUE(logmm_re)) {
+                  mixed_model(fixed = formula$fixed, random = formula$random, family = binomial(), data = data, control = control_logmm)
+                } else {
+                  glm(formula, family = binomial(), data = data, control = control_logm)
+                }
+              }
+            }
+          }, warning = function(w) {
+            warnings.[[length(warnings.) + 1L]] <<- w$message
+            invokeRestart("muffleWarning")
+          }, message = function(m) {
+            messages.[[length(messages.) + 1L]] <<- m$message
+            invokeRestart("muffleMessage")
+          }), error = function(e) {
+            error_messages[[name]] <<- e$message
+            return(NULL)
+          })
         if (length(warnings.) > 0) {
           warning_messages[[name]] <<- warnings.
         }
@@ -348,39 +441,19 @@ ccc_analysis <- function(expression_matrix, metadata, contrast,
         fit
       }
       
-      fit_logistic <- function(data, formula, name) {
-        warnings. <- list()
-        fit <- tryCatch(
-          withCallingHandlers({
-          cond <- isTRUE(sep_detection) && detect_re_separation(dt = data, z_col = "z", id_col = "id", num_ids = num_ids, sep_prop = sep_prop, sep_n = sep_n)
-          if (cond) {
-            stop("Complete or Quasi-complete separation detected.")
-          } else {
-            if (isTRUE(logmm_re)) {
-              mixed_model(fixed = formula$fixed, random = formula$random, family = binomial(), data = data, control = control_logmm)
-            } else {
-              glm(formula, family = binomial(), data = data, control = control_logm)
-            }
-          }
-        }, warning = function(w) {
-          warnings.[[length(warnings.) + 1L]] <<- w$message
-          invokeRestart("muffleWarning")
-        }), error = function(e) {
-          error_messages[[name]] <<- e$message
-          return(NULL)
-        })
-        if (length(warnings.) > 0) {
-          warning_messages[[name]] <<- warnings.
-        }
-        fit
-      }
-      
       ##
       warning_messages <- the_messages <- error_messages <- list()
-      fit.l.linear <- fit_linear(data = data_sender_ligand_1, formula = formula_linear, name = "ligand.linear")
-      fit.r.linear <- fit_linear(data = data_receiver_receptor_1, formula = formula_linear, name = "receptor.linear")
-      fit.l.logistic <- fit_logistic(data = data_sender_ligand, formula = formula_logistic, name = "ligand.logistic")
-      fit.r.logistic <- fit_logistic(data = data_receiver_receptor, formula = formula_logistic, name = "receptor.logistic")
+      # fit.l.linear <- fit_linear(data = data_sender_ligand_1, formula = formula_linear, name = "ligand.linear")
+      # fit.r.linear <- fit_linear(data = data_receiver_receptor_1, formula = formula_linear, name = "receptor.linear")
+      # fit.l.logistic <- fit_logistic(data = data_sender_ligand, formula = formula_logistic, name = "ligand.logistic")
+      # fit.r.logistic <- fit_logistic(data = data_receiver_receptor, formula = formula_logistic, name = "receptor.logistic")
+      
+      fit.l.linear <- fit_model(part = "linear", data = data_sender_ligand_1, formula = formula_linear, name = "ligand.linear")
+      fit.r.linear <- fit_model(part = "linear", data = data_receiver_receptor_1, formula = formula_linear, name = "receptor.linear")
+      fit.l.logistic <- fit_model(part = "logistic", data = data_sender_ligand, formula = formula_logistic, name = "ligand.logistic")
+      fit.r.logistic <- fit_model(part = "logistic", data = data_receiver_receptor, formula = formula_logistic, name = "receptor.logistic")
+      
+      
       if (length(warning_messages) > 0) {
         results.warning[[paste(sender, receiver, ligand, receptor, sep = "-")]] <- warning_messages
       }
@@ -423,11 +496,13 @@ ccc_analysis <- function(expression_matrix, metadata, contrast,
   list.test_results <- lapply(results_obj, \(x) x$test_results)
   list.errors <- lapply(results_obj, \(x) x$errors)
   list.warnings <- lapply(results_obj, \(x) x$warnings)
+  list.messages <- lapply(results_obj, \(x) x$messages)
   
   list(summary = as.data.frame(rbindlist(list.descriptive_stats)),
        test = as.data.frame(rbindlist(list.test_results, fill = TRUE)),
        errors = do.call(c, list.errors),
-       warnings = do.call(c, list.warnings))
+       warnings = do.call(c, list.warnings),
+       messages = do.call(c, list.messages))
   
 }
 
