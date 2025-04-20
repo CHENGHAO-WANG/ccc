@@ -1,7 +1,6 @@
 
 
 
-library(data.table)
 
 #' Preprocess a data.table: center specified columns (numerical and converted categorical) in place.
 #'
@@ -53,35 +52,6 @@ center_covar<- function(dt, covar) {
   return(unique(centered_column_names)) # Return the unique names of centered columns
 }
 
-# Example Usage:
-dt <- data.table(
-  A = factor(c("a", "b", "a")),
-  B = c(1, 2, 3),
-  C = c("x", "y", "z"),
-  D = 4:7,
-  E = 8:11
-)
-original_dt_address <- address(dt) # Get the memory address of the original dt
-covar_cols <- c("A", "B", "E")
-centered_cols <- preprocess_dt_center_covar_inplace(dt, covar_cols)
-print("Centered Columns:", centered_cols)
-print("Modified Data Table:")
-print(dt)
-print(paste("Original data.table was modified:", address(dt) == original_dt_address))
-
-dt2 <- data.table(
-  F = c(1,2,3,4),
-  G = factor(c("red", "blue", "red", "green")),
-  H = 10:13
-)
-original_dt2_address <- address(dt2)
-covar_cols2 <- c("G", "H")
-centered_cols2 <- preprocess_dt_center_covar_inplace(dt2, covar_cols2)
-print("Centered Columns 2:", centered_cols2)
-print("Modified Data Table 2:")
-print(dt2)
-print(paste("Original data.table 2 was modified:", address(dt2) == original_dt2_address))
-
 
 
 detect_re_separation <- function(dt, z_col, id_col, num_ids = NULL, sep_prop = 0, sep_n = 0) {
@@ -97,38 +67,17 @@ detect_re_separation <- function(dt, z_col, id_col, num_ids = NULL, sep_prop = 0
   count_sep_ids <- dt[, all(get(z_col) == 0) || all(get(z_col) == 1), by = get(id_col)][, sum(V1)]
   
   # Check if the proportion exceeds the threshold
-  detection <- count_sep_ids > prop * num_ids && count_sep_ids > sep_n
+  detection <- count_sep_ids > sep_prop * num_ids && count_sep_ids > sep_n
   
   return(detection)
 }
 
-detect_all_zeros <- function(dt, z_col, id_col) {
-  setDT(dt)
-  dt[, all(get(z_col) == 0), by = get(id_col)][, any(V1)]
-}
-
-dt1 <- data.table(
-    id = c(1, 1, 2, 2, 3, 3),
-    z = c(0, 0, 1, 1, 0, 0)
-  )
-dt2 <- data.table(
-    id = c(1, 1, 2, 2, 3, 3),
-    z = c(1, 0, 1, 1, 0, 1)
-  )
-detect_all_zeros(dt1, "z","id")
 
 detect_all_zeros <- function(dt, id_col, id) {
   setDT(dt)
-  
   unique_id_col <- unique(dt[[id_col]]) # Get unique values from id_col
   !all(id %in% unique_id_col)
 }
-detect_all_zeros(dt1, "id", 1:2)
-
-dt4 <- dt1[id ==4]
-dt4
-detect_all_zeros(dt4, "id", 1:2)
-
 
 compute_group_stats <- function(dt, y_col = "y", group_col = "group", z_col = "z", prefix) {
   # Compute stats for groups that are present in the data
@@ -154,73 +103,8 @@ compute_group_stats <- function(dt, y_col = "y", group_col = "group", z_col = "z
   setnames(stats_dt, stats_cols, paste0(prefix, stats_cols))
   stats_dt
 }
-compute_grouped_stats <- function(dt, y_col = "y", group_col = "group", z_col = "z", group_names) {
-  # Compute stats for groups that are present in the data
-  stats_dt <- dt[, .(
-    mean = mean(get(y_col)),
-    positive_mean = if (any(get(z_col) == 1)) mean(get(y_col)[get(z_col) == 1]) else 0,
-    expression_rate = mean(get(z_col) == 1)
-  ), by = get(group_col)]
-  
-  setnames(stats_dt, "get", group_col)
-  
-  # Ensure all groups from group_names are included
-  all_groups_dt <- data.table(group = group_names)
-  result <- data.table::merge(all_groups_dt, stats_dt, by = group_col, all.x = TRUE)
 
-  # Replace NAs with 0 for missing groups
-  for (col in c("mean", "positive_mean", "expression_rate")) {
-    result[is.na(get(col)), (col) := 0]
-  }
 
-  return(result)
-  stats_dt
-}
-dt <- data.table(
-  x = c(0, 2, 3, 0, 5, 0, 7),
-  z = c(0, 1, 1, 0, 1, 0, 1),
-  group = c("A", "A", "B", "B", "B", "C", "C")
-)
-dt <- data.table(
-  x = c(0, 1, 3, 0, 5, 0, 7),
-  z = c(0, 0, 1, 0, 1, 0, 1),
-  group = c("A", "A", "B", "B", "B", "C", "C")
-)
-group_names <- c("A", "B", "C", "D")  # D is not present in data
-
-dt.result <- compute_group_stats(dt, y_col = "x", prefix = "ligand.")
-print(dt.result)
-compute_grouped_stats(dt, y_col = "x", group_names = group_names)[]
-
-compute_cdr <- function(expression_matrix, metadata_subset, cutoff, cell_id_col = "cell_id") {
-  # Ensure rownames and colnames are correctly set
-  if (is.null(rownames(expression_matrix)) || is.null(colnames(expression_matrix))) {
-    stop("expression_matrix must have rownames (genes) and colnames (cell ids).")
-  }
-  
-  # Ensure the specified cell_id_col exists in metadata_subset
-  if (!cell_id_col %in% colnames(metadata_subset)) {
-    stop(paste0("metadata_subset must contain a '", cell_id_col, "' column."))
-  }
-  
-  # Subset the expression matrix to only include the cell ids in metadata_subset
-  cell_ids <- metadata_subset[[cell_id_col]]
-  common_cells <- intersect(colnames(expression_matrix), cell_ids)
-  
-  if (length(common_cells) == 0) {
-    stop("No overlapping cell ids found between expression_matrix and metadata_subset.")
-  }
-  
-  expression_subset <- expression_matrix[, common_cells, drop = FALSE]
-  
-  # Calculate cdr: fraction of genes with expression > cutoff for each cell
-  cdr_values <- colMeans(expression_subset > cutoff)
-  
-  # Merge results with metadata_subset
-  metadata_subset[, cdr := cdr_values[match(get(cell_id_col), names(cdr_values))]]
-  
-  return(metadata_subset)
-}
 
 #' 
 #' 
@@ -247,25 +131,23 @@ prep_lr <- function(lr) {
   return(lr_table)
 }
 
-#'
-#' @import data.table
+
 
 rename_metadata <- function(metadata, cell_id_col, id_col, group_col, cell_type_col) {
-  metadata <- as.data.table(metadata)
+  #metadata0 <- as.data.table(metadata)
+  #message("Current column names: ", paste(names(metadata), collapse = ", "))
   if (is.null(id_col)) {
     setnames(metadata, old = c(cell_id_col, group_col, cell_type_col), new = c("cell_id", "group", "cell_type"))
     metadata[, id := group]
   } else {
-    setnames(metadata, old = c(cell_id_col, id_col, group_col, cell_type_col), new = c("cell_id", "id", "group", "cell_type"))
+    data.table::setnames(metadata, old = c(cell_id_col, id_col, group_col, cell_type_col), new = c("cell_id", "id", "group", "cell_type"))#, skip_absent = T)
   }
   return(metadata)
 }
 
 
 
-#' 
-#' @import data.table
-#' 
+ 
 filter_cell_type <- function(metadata, sender, receiver, min_cell, contrast) {
   
   if (is.null(sender)) {
@@ -335,10 +217,10 @@ filter_cell_type <- function(metadata, sender, receiver, min_cell, contrast) {
   if (length(missing_sender) > 0 || length(missing_receiver) > 0) {
     warning_msg <- "Some cell types in 'sender' or 'receiver' do not appear in the final subset."
     if (length(missing_sender) > 0) {
-      warning_msg <- paste0(warning_msg, "\nMissing in sender: ", paste(missing_sender, collapse = ", "))
+      warning_msg <- paste0(warning_msg, "Missing in sender: ", paste(missing_sender, collapse = ", "))
     }
     if (length(missing_receiver) > 0) {
-      warning_msg <- paste0(warning_msg, "\nMissing in receiver: ", paste(missing_receiver, collapse = ", "))
+      warning_msg <- paste0(warning_msg, "Missing in receiver: ", paste(missing_receiver, collapse = ", "))
     }
     warning(warning_msg)
   }
@@ -346,22 +228,19 @@ filter_cell_type <- function(metadata, sender, receiver, min_cell, contrast) {
   return(list(metadata_subset = metadata_subset, sender = sender, receiver = receiver))
 }
 
-#' 
-#' @import data.table
-#' 
 
 compute_cdr <- function(expression_matrix, metadata_subset, threshold) {
-  # Ensure rownames and colnames are correctly set
-  if (is.null(rownames(expression_matrix)) || is.null(colnames(expression_matrix))) {
-    stop("expression_matrix must have rownames (genes) and colnames (cell ids).")
-  }
+  # # Ensure rownames and colnames are correctly set
+  # if (is.null(rownames(expression_matrix)) || is.null(colnames(expression_matrix))) {
+  #   stop("expression_matrix must have rownames (genes) and colnames (cell ids).")
+  # }
   
   # Subset the expression matrix to only include the cell ids in metadata_subset
   common_cells <- intersect(colnames(expression_matrix), metadata_subset$cell_id)
   
-  if (length(common_cells) == 0) {
-    stop("No overlapping cell ids found between 'expression_matrix' and 'metadata' given 'sender' and 'receiver'.")
-  }
+  # if (length(common_cells) == 0) {
+  #   stop("No overlapping cell ids found between 'expression_matrix' and 'metadata' given 'sender' and 'receiver'.")
+  # }
   
   expression_subset <- expression_matrix[, common_cells, drop = FALSE]
   
@@ -387,7 +266,7 @@ compute_expression_value <- function(expr_values, multi_sub) {
       gene_means <- rowMeans(expr_values)
       min_gene <- names(which.min(gene_means))
       expr_values[min_gene, , drop = TRUE]
-    }
+    },
     "min_rate_gene" = {
       gene_rates <- rowMeans(expr_values > threshold)
       min_gene <- names(which.min(gene_rates))
@@ -396,15 +275,20 @@ compute_expression_value <- function(expr_values, multi_sub) {
   )
 }
 
+#' Title
+#' 
+#' @importFrom lme4 fixef
+#' @importFrom clubSandwich vcovCR
+#' @importFrom sandwich vcovHC
+#' @importFrom GLMMadaptive marginal_coefs
+#' 
 ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
-                     contrast, re_lmm, re_logmm, sandwich,
+                     contrast, lmm_re, logmm_re, sandwich,
                      sender, receiver, ligand, receptor) {
-  
   dt.test <- data.table()
-  group_names <- colnames(contrast)
-  
+  group_names <- paste0("group", colnames(contrast))
   if (!is.null(fit.l.linear) && !is.null(fit.r.linear)) {
-    if (isTRUE(re_lmm)) {
+    if (isTRUE(lmm_re)) {
       coef_l_lm <- fixef(fit.l.linear)
       coef_r_lm <- fixef(fit.r.linear)
       if (isTRUE(sandwich)) {
@@ -419,14 +303,17 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
         vcov_r_lm_group <- vcovHC(fit.r.linear, type = "HC3")[group_names, group_names]
       }
     }
-    vcov_l_lm_group <- vcov(fit.l.linear)[group_names, group_names]
-    vcov_r_lm_group <- vcov(fit.r.linear)[group_names, group_names]
+    if (isFALSE(sandwich)) {
+      vcov_l_lm_group <- vcov(fit.l.linear)[group_names, group_names]
+      vcov_r_lm_group <- vcov(fit.r.linear)[group_names, group_names]
+    }
     test.linear <- TRUE
   } else {
     test.linear <- FALSE
   }
+  
   if (!is.null(fit.l.logistic) && !is.null(fit.r.logistic)) {
-    if (isTRUE(re_logmm)) {
+    if (isTRUE(logmm_re)) {
       m_l <- marginal_coefs(fit.l.logistic, std_errors = TRUE, cores = 1L, sandwich = sandwich)
       m_r <- marginal_coefs(fit.r.logistic, std_errors = TRUE, cores = 1L, sandwich = sandwich)
       coef_l_logm <- m_l$betas
@@ -466,6 +353,9 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
     coef_l_logm <- coef_l_logm[group_names]
     coef_r_logm <- coef_r_logm[group_names]
     
+  }
+  if (test.linear || test.logistic) {
+    dt.test[ , c("sender", "receiver", "ligand", "receptor") := list(sender, receiver, ligand, receptor)]
   }
   
   # Filter coefficients to only include group names
@@ -532,7 +422,7 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
     }
     
     vcov_logistic <- bdiag(vcov_l_logm_group, vcov_r_logm_group)
-    cov_effect_size_logistic <- gradient_matrix_logistic %*% as.matrix(vcov_hurdle) %*% t(gradient_matrix_logistic)
+    cov_effect_size_logistic <- gradient_matrix_logistic %*% as.matrix(vcov_logistic) %*% t(gradient_matrix_logistic)
     
     test_stat_logistic <- t(effect_size_logistic) %*% chol2inv(chol(cov_effect_size_logistic)) %*% effect_size_logistic
     p_value_logistic <- pchisq(test_stat_logistic, df = nrow(contrast), lower.tail = FALSE)
