@@ -278,8 +278,6 @@ compute_expression_value <- function(expr_values, multi_sub) {
 #' Title
 #' 
 #' @importFrom lme4 fixef
-#' @importFrom clubSandwich vcovCR
-#' @importFrom sandwich vcovHC
 #' @importFrom GLMMadaptive marginal_coefs
 #' @importFrom Matrix bdiag
 #' 
@@ -293,15 +291,15 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
       coef_l_lm <- fixef(fit.l.linear)
       coef_r_lm <- fixef(fit.r.linear)
       if (isTRUE(sandwich)) {
-        vcov_l_lm_group <- vcovCR(fit.l.linear, type = "CR2")[group_names, group_names]
-        vcov_r_lm_group <- vcovCR(fit.r.linear, type = "CR2")[group_names, group_names]
+        vcov_l_lm_group <- clubSandwich::vcovCR(fit.l.linear, type = "CR2")[group_names, group_names]
+        vcov_r_lm_group <- clubSandwich::vcovCR(fit.r.linear, type = "CR2")[group_names, group_names]
       }
     } else {
       coef_l_lm <- stats::coef(fit.l.linear)
       coef_r_lm <- stats::coef(fit.r.linear)
       if (isTRUE(sandwich)) {
-        vcov_l_lm_group <- vcovHC(fit.l.linear, type = "HC3")[group_names, group_names]
-        vcov_r_lm_group <- vcovHC(fit.r.linear, type = "HC3")[group_names, group_names]
+        vcov_l_lm_group <- sandwich::vcovHC(fit.l.linear, type = "HC3")[group_names, group_names]
+        vcov_r_lm_group <- sandwich::vcovHC(fit.r.linear, type = "HC3")[group_names, group_names]
       }
     }
     if (isFALSE(sandwich)) {
@@ -325,8 +323,8 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
       coef_l_logm <- stats::coef(fit.l.logistic)
       coef_r_logm <- stats::coef(fit.r.logistic)
       if (isTRUE(sandwich)) {
-        vcov_l_logm_group <- vcovHC(fit.l.logistic, type = "HC3")[group_names, group_names]
-        vcov_r_logm_group <- vcovHC(fit.r.logistic, type = "HC3")[group_names, group_names]
+        vcov_l_logm_group <- sandwich::vcovHC(fit.l.logistic, type = "HC3")[group_names, group_names]
+        vcov_r_logm_group <- sandwich::vcovHC(fit.r.logistic, type = "HC3")[group_names, group_names]
       } else {
         vcov_l_logm_group <- vcov(fit.l.logistic)[group_names, group_names]
         vcov_r_logm_group <- vcov(fit.r.logistic)[group_names, group_names]
