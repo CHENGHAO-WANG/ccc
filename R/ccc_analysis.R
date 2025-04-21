@@ -5,7 +5,6 @@
 #' @importFrom lme4 lmer
 #' @importFrom GLMMadaptive mixed_model
 #' @import progressr
-#' @importFrom assertthat assert_that is.flag
 #' 
 #' @param multi_sub it 
 #'  \itemize{
@@ -38,7 +37,7 @@ ccc_analysis <- function(expression_matrix, metadata, contrast,
   setDTthreads(nthreads)
   on.exit(setDTthreads(old_nthreads), add = TRUE)
   
-  assert_that(is.flag(verbose))
+  assertthat::assert_that(assertthat::is.flag(verbose))
   
   if (verbose) {
     if (interactive()) {
@@ -68,12 +67,12 @@ ccc_analysis <- function(expression_matrix, metadata, contrast,
     # }
   }
   
-  assert_that(is.flag(cdr))
-  assert_that(is.flag(lmm_re))
-  assert_that(is.flag(logmm_re))
-  assert_that(is.flag(sandwich))
-  assert_that(is.flag(sep_detection))
-  assert_that(is.flag(cell_type_padj))
+  assertthat::assert_that(assertthat::is.flag(cdr))
+  assertthat::assert_that(assertthat::is.flag(lmm_re))
+  assertthat::assert_that(assertthat::is.flag(logmm_re))
+  assertthat::assert_that(assertthat::is.flag(sandwich))
+  assertthat::assert_that(assertthat::is.flag(sep_detection))
+  assertthat::assert_that(assertthat::is.flag(cell_type_padj))
   
   required_args <- c('expression_matrix', 'metadata', 'contrast')
   passed_args <- names(match.call())[-1]

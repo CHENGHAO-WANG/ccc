@@ -275,12 +275,7 @@ compute_expression_value <- function(expr_values, multi_sub) {
   )
 }
 
-#' Title
-#' 
-#' @importFrom lme4 fixef
-#' @importFrom GLMMadaptive marginal_coefs
-#' @importFrom Matrix bdiag
-#' 
+
 ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
                      contrast, lmm_re, logmm_re, sandwich,
                      sender, receiver, ligand, receptor) {
@@ -288,8 +283,8 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
   group_names <- paste0("group", colnames(contrast))
   if (!is.null(fit.l.linear) && !is.null(fit.r.linear)) {
     if (isTRUE(lmm_re)) {
-      coef_l_lm <- fixef(fit.l.linear)
-      coef_r_lm <- fixef(fit.r.linear)
+      coef_l_lm <- lme4::fixef(fit.l.linear)
+      coef_r_lm <- lme4::fixef(fit.r.linear)
       if (isTRUE(sandwich)) {
         vcov_l_lm_group <- clubSandwich::vcovCR(fit.l.linear, type = "CR2")[group_names, group_names]
         vcov_r_lm_group <- clubSandwich::vcovCR(fit.r.linear, type = "CR2")[group_names, group_names]
@@ -313,8 +308,8 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
   
   if (!is.null(fit.l.logistic) && !is.null(fit.r.logistic)) {
     if (isTRUE(logmm_re)) {
-      m_l <- marginal_coefs(fit.l.logistic, std_errors = TRUE, cores = 1L, sandwich = sandwich)
-      m_r <- marginal_coefs(fit.r.logistic, std_errors = TRUE, cores = 1L, sandwich = sandwich)
+      m_l <- GLMMadaptive::marginal_coefs(fit.l.logistic, std_errors = TRUE, cores = 1L, sandwich = sandwich)
+      m_r <- GLMMadaptive::marginal_coefs(fit.r.logistic, std_errors = TRUE, cores = 1L, sandwich = sandwich)
       coef_l_logm <- m_l$betas
       coef_r_logm <- m_l$betas
       vcov_l_logm_group <- m_l$var_betas[group_names, group_names] 
@@ -391,7 +386,7 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
       }
     }
     
-    vcov_linear <- bdiag(vcov_l_lm_group, vcov_r_lm_group)
+    vcov_linear <- Matrix::bdiag(vcov_l_lm_group, vcov_r_lm_group)
     cov_effect_size_linear <- gradient_matrix_linear %*% as.matrix(vcov_linear) %*% t(gradient_matrix_linear)
     
     test_stat_linear <- t(effect_size_linear) %*% chol2inv(chol(cov_effect_size_linear)) %*% effect_size_linear
@@ -420,7 +415,7 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
       }
     }
     
-    vcov_logistic <- bdiag(vcov_l_logm_group, vcov_r_logm_group)
+    vcov_logistic <- Matrix::bdiag(vcov_l_logm_group, vcov_r_logm_group)
     cov_effect_size_logistic <- gradient_matrix_logistic %*% as.matrix(vcov_logistic) %*% t(gradient_matrix_logistic)
     
     test_stat_logistic <- t(effect_size_logistic) %*% chol2inv(chol(cov_effect_size_logistic)) %*% effect_size_logistic
@@ -452,7 +447,7 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
         gradient_matrix_hurdle[i, ind_r_logm] <- contrast[i, j] * coef_l_lm[group] * coef_r_lm[group] * plogis(coef_l_logm[group]) * dlogis(coef_r_logm[group])
       }
     }
-    vcov_hurdle <- bdiag(vcov_l_lm_group, vcov_l_logm_group, vcov_r_lm_group, vcov_r_logm_group)
+    vcov_hurdle <- Matrix::bdiag(vcov_l_lm_group, vcov_l_logm_group, vcov_r_lm_group, vcov_r_logm_group)
     cov_effect_size_hurdle <- gradient_matrix_hurdle %*% as.matrix(vcov_hurdle) %*% t(gradient_matrix_hurdle)
     
     test_stat_hurdle <- t(effect_size_hurdle) %*% chol2inv(chol(cov_effect_size_hurdle)) %*% effect_size_hurdle
