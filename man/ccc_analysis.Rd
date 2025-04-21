@@ -45,9 +45,9 @@ ccc_analysis(
 \itemize{
   \item
   \item
-}
+}}
 
-@param cell_type_padj adjust p-values for each sender-receiver pair or not}
+\item{cell_type_padj}{adjust p-values for each sender-receiver pair or not}
 }
 \description{
 Title

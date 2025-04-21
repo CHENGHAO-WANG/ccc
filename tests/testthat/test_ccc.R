@@ -195,6 +195,17 @@ interaction_df <- all_combos[sample(nrow(all_combos), 100), ]
 # View a few rows
 colnames(interaction_df) <- c("ligand", "receptor")
 
+library(future)
+oplan <- plan(multisession, workers = 4L)
+start.time <- Sys.time()
 a <- ccc_analysis(expression_matrix = expression_matrix, metadata = metadata,
                   group_col = "condition", id_col = "sample", lr = interaction_df[3:10,],
                   contrast = c(A = 1, B = -1), logmm_re = F)
+Sys.time() - start.time
+plan(oplan)
+
+start.time <- Sys.time()
+b <- ccc_analysis(expression_matrix = expression_matrix, metadata = metadata,
+                  group_col = "condition", id_col = "sample", lr = interaction_df[3:10,],
+                  contrast = c(A = 1, B = -1), logmm_re = F)
+Sys.time() - start.time

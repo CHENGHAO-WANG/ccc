@@ -281,6 +281,7 @@ compute_expression_value <- function(expr_values, multi_sub) {
 #' @importFrom clubSandwich vcovCR
 #' @importFrom sandwich vcovHC
 #' @importFrom GLMMadaptive marginal_coefs
+#' @importFrom Matrix bdiag
 #' 
 ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
                      contrast, lmm_re, logmm_re, sandwich,

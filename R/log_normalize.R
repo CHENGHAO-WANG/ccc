@@ -1,6 +1,6 @@
 
 
-
+#' @export
 log_normalize <- function(count_matrix, MARGIN = 2L, scale_factor = 10000, base = exp(1)) {
   
   lib_size <- switch(as.character(MARGIN),
