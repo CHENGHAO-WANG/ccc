@@ -199,8 +199,8 @@ library(future)
 oplan <- plan(multisession, workers = 4L)
 start.time <- Sys.time()
 a <- ccc_analysis(expression_matrix = expression_matrix, metadata = metadata,
-                  group_col = "condition", id_col = "sample", lr = interaction_df[3:10,],
-                  contrast = c(A = 1, B = -1), logmm_re = F)
+                  group_col = "condition", id_col = "sample", lr = interaction_df[3:6,],
+                  contrast = c(A = 1, B = -1), lmm_re = F, logmm_re = F, verbose = F)
 Sys.time() - start.time
 plan(oplan)
 

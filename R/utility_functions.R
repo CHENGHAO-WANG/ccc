@@ -22,7 +22,7 @@
 #' print(dt) # The original 'dt' is now modified
 center_covar<- function(dt, covar) {
   # Ensure dt is a data.table
-  setDT(dt)
+  # setDT(dt)
   
   covar_exists <- covar %in% names(dt)
   # if (!all(covar_exists)) {
@@ -56,7 +56,7 @@ center_covar<- function(dt, covar) {
 
 detect_re_separation <- function(dt, z_col, id_col, num_ids = NULL, sep_prop = 0, sep_n = 0) {
   # Ensure dt is a data.table
-  setDT(dt)
+  # setDT(dt)
   
   # Count the number of distinct id's
   if (is.null(num_ids)) {
@@ -74,7 +74,7 @@ detect_re_separation <- function(dt, z_col, id_col, num_ids = NULL, sep_prop = 0
 
 
 detect_all_zeros <- function(dt, id_col, id) {
-  setDT(dt)
+  # setDT(dt)
   unique_id_col <- unique(dt[[id_col]]) # Get unique values from id_col
   !all(id %in% unique_id_col)
 }
@@ -254,7 +254,7 @@ compute_cdr <- function(expression_matrix, metadata_subset, threshold) {
 }
 
 # Function to compute expression value based on method
-compute_expression_value <- function(expr_values, multi_sub) {
+compute_expression_value <- function(expr_values, multi_sub, threshold) {
   if (is.null(dim(expr_values))) return(expr_values)
   
   switch(
@@ -369,7 +369,7 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
   # coef_l_logm <- coef_l_logm[group_names]
   # coef_r_lm <- coef_r_lm[group_names]
   # coef_r_logm <- coef_r_logm[group_names]
-  
+
   if (isTRUE(test.linear)) {
     effect_size_linear <- contrast %*% (coef_l_lm * coef_r_lm)
     gradient_matrix_linear <- matrix(0, nrow = nrow(contrast), ncol = length(group_names) * 2L)
@@ -390,9 +390,9 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
     cov_effect_size_linear <- gradient_matrix_linear %*% as.matrix(vcov_linear) %*% t(gradient_matrix_linear)
     
     test_stat_linear <- t(effect_size_linear) %*% chol2inv(chol(cov_effect_size_linear)) %*% effect_size_linear
-    p_value_linear <- pchisq(test_stat_linear, df = nrow(contrast), lower.tail = FALSE)
+    pvalue_linear <- pchisq(test_stat_linear, df = nrow(contrast), lower.tail = FALSE)
     
-    dt.test[, c("effect_size_linear", "p_value_linear") := list(list(effect_size_linear), p_value_linear)]
+    dt.test[, c("effect_size_linear", "pvalue_linear") := list(list(effect_size_linear), pvalue_linear)]
     if (nrow(contrast) > 1L) {
       dt.test[, paste0("effect_size_linear_", seq_len(nrow(contrast))) := transpose(effect_size_linear)]
       dt.test[, effect_size_linear := NULL]
@@ -419,9 +419,9 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
     cov_effect_size_logistic <- gradient_matrix_logistic %*% as.matrix(vcov_logistic) %*% t(gradient_matrix_logistic)
     
     test_stat_logistic <- t(effect_size_logistic) %*% chol2inv(chol(cov_effect_size_logistic)) %*% effect_size_logistic
-    p_value_logistic <- pchisq(test_stat_logistic, df = nrow(contrast), lower.tail = FALSE)
+    pvalue_logistic <- pchisq(test_stat_logistic, df = nrow(contrast), lower.tail = FALSE)
     
-    dt.test[, c("effect_size_logistic", "p_value_logistic") := list(list(effect_size_logistic), p_value_logistic)]
+    dt.test[, c("effect_size_logistic", "pvalue_logistic") := list(list(effect_size_logistic), pvalue_logistic)]
     if (nrow(contrast) > 1L) {
       dt.test[, paste0("effect_size_logistic_", seq_len(nrow(contrast))) := transpose(effect_size_logistic)]
       dt.test[, effect_size_logistic := NULL]
@@ -451,11 +451,11 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
     cov_effect_size_hurdle <- gradient_matrix_hurdle %*% as.matrix(vcov_hurdle) %*% t(gradient_matrix_hurdle)
     
     test_stat_hurdle <- t(effect_size_hurdle) %*% chol2inv(chol(cov_effect_size_hurdle)) %*% effect_size_hurdle
-    p_value_hurdle <- pchisq(test_stat_hurdle, df = nrow(contrast), lower.tail = FALSE)
+    pvalue_hurdle <- pchisq(test_stat_hurdle, df = nrow(contrast), lower.tail = FALSE)
     test_stat_2part <- test_stat_linear + test_stat_logistic
-    p_value_2part <- pchisq(test_stat_2part, df = nrow(contrast) * 2L, lower.tail = FALSE)
+    pvalue_2part <- pchisq(test_stat_2part, df = nrow(contrast) * 2L, lower.tail = FALSE)
     
-    dt.test[, c("effect_size_hurdle", "p_value_hurdle", "p_value_2part") := list(list(effect_size_hurdle), p_value_hurdle, p_value_2part)]
+    dt.test[, c("effect_size_hurdle", "pvalue_hurdle", "pvalue_2part") := list(list(effect_size_hurdle), pvalue_hurdle, pvalue_2part)]
     if (nrow(contrast) > 1L) {
       dt.test[, paste0("effect_size_hurdle_", seq_len(nrow(contrast))) := transpose(effect_size_hurdle)]
       dt.test[, effect_size_hurdle := NULL]

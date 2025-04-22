@@ -1,18 +1,49 @@
-#' Title
+#' Perform Wald tests to identify differential cell-cell communication
+#' 
+#' @param expression_matrix a numeric matrix of normalized counts, with rows corresponding to genes and columns corresponding to cells. Both row names (gene symbols) and column names (cell identifiers) must be provided.
+#' @param metadata a data frame containing cell-level metadata (e.g., cell type, group, id, covariates).
+#' @param contrast a named numeric vector or a numeric matrix with column names. The names should match the levels of the variable being tested (specified by `group_col`). The testings are performed based on this.
+#' @param cell_id_col a character string specifying the name of the column in `metadata` that contains cell identifiers. These ID's should match the column names of `expression_matrix`. Defaults to `"cell_id"`.
+#' @param cell_type_col a character string specifying the name of the column in `metadata` that contains cell type annotations. Defaults to `"cell_type"`.
+#' @param group_col a character string specifying the name of the column in `metadata` that represents the variable to be tested. The values in this column should match the names specified in `contrast`. Defaults to `group`.
+#' @param covar_col a character string or a character vector specifying the column(s) in `metadata` that represent covariates to include in the model. Defaults to `NULL`, meaning no covariates are adjusted for.
+#' @param cdr logical scalar. If `TRUE` (the default), calculate and adjust for cellular detection rates (CDR). The CDR of a cell is defined as the number of genes with expression above `threshold` divided by the total number of genes.
+#' @param id_col a character string specifying the name of the column in `metadata` that contains individual-level (sample-level) ID's. Used for random effect modeling. Must be provided if `lmm_re == TRUE` or `logmm_re == TRUE`; otherwise, this can be omitted.
+#' @param lmm_re logical scalar. Should a random effect be included in the linear component of the hurdle model? If `TRUE` (the default), fit a linear mixed-effects model with a random intercept based on `id_col` for each ligand/receptor gene; if `FALSE`, fit a linear model without random effects.
+#' @param logmm_re logical scalar. Should a random effect be included in the logistic component of the hurdle model? If `TRUE` (the default), fit a logistic mixed-effects model with a random intercept based on `id_col` for each ligand/receptor gene; if `FALSE`, fit a logistic model without random effects.
+#' @param lr specifies the ligand-receptor database to use. Can be `"omnipathr"` (the default), `"ramilowski"`, or a user-supplied data frame. If `"omnipathr"` or `"ramilowski"` is provided, the corresponding built-in dataset is used. If a data frame is provided, it must contain exactly two columns named `"ligand"` and `"receptor"`, with gene symbols as entries. For multi-subunit ligands/receptors, the gene symbols of all subunits must be joined by `_`. (e.g., `"CLCF1_CRLF1"` for a ligand composed of CLCF1 and CRLF1)
+#' @param multi_sub a character string specifying how to handle multi-subunit ligands/receptors.
+#'  \itemize{
+#'    \item \dQuote{\code{minimum}}: (the default) the expression value for each cell is defined as the minimum expression across all subunit genes.
+#'    \item \dQuote{\code{arithmetic_mean}}: the expression value for each cell is defined as the arithmetic mean expression across all subunit genes.
+#'    \item \dQuote{\code{geometric_mean}}: the expression value for each cell is defined as the geometric mean expression across all subunit genes.
+#'    \item \dQuote{\code{min_avg_gene}}: the subunit gene with the minimum average expression is selected.
+#'    \item \dQuote{\code{min_rate_gene}}: the subunit gene with the minimum expression rate is selected. The expression rate for a gene is calculated as the number of cells with expression above `threshold` divided by the total number of cells.
+#'  }
+#' @param sandwich logical scalar. If `TRUE`, sandwich standard errors are used in the calculations. Defaults to `FALSE`.
+#' @param verbose logical scalar. If `TRUE` (the default), display a progress bar. The default handler is "cli". This package uses the \pkg{progressr} framework for progress reporting, so users can customize the progress bar. See [progressr::handlers()] for customizing progress bar behavior.
+#' @param min_cell integer scalar. Filter out cell types with fewer than `min_cell` cells. Defaults to 10.
+#' @param min_pct numeric scalar. Only test ligand-receptor pairs that are expressed above `threshold` in a minimum fraction of `min_pct` cells for `large_n` individuals/samples in sender and receiver cell types respectively. Defaults to 0.01.
+#' @param large_n integer scalar. Number of individuals/samples that are considered to be "large". Defaults to 2.
+#' @param min_total_pct numeric scalar. Only test ligand-receptor pairs that are detected (expression above `threshold`) in a minimum fraction of `min_total_pct` cells across all individuals/samples in sender and receiver cell types respectively. Defaults to 0.
+#' @param threshold numeric scalar. A gene is considered expressed in a cell if its expression is greater than `threshold`. Defaults to 0.
+#' @param sep_detection logical scalar. If `TRUE` (the default), detect complete or quasi-complete separation in logistic models.
+#' @param sep_prop numeric scalar. For each ligand/receptor gene, if it is expressed above/below `threshold` in all cells of more than a `sep_prop` fraction of individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.
+#' @param sep_n numeric scalar. For each ligand/receptor gene, if it is expressed above/below `threshold` in all cells of more than `sep_n` individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.
+#' @param padj_method a character string for multiple testing correction method. This is passed to [stats::p.adjust()]. Defaults to "BH".
+#' @param cell_type_padj logical scalar. If `TRUE` (the default), adjust p-values for each sender-receiver pair.
+#' @param control_logm control parameters for optimization in [stats::glm()].
+#' @param control_lmm control parameters for optimization in [lme4::lmer()].
+#' @param control_logmm control parameters for optimization in [GLMMadaptive::mixed_model].
+#' @param chunk_size integer scalar. The number of interaction pairs (each defined by a distinct combination of sender, receiver, ligand, and receptor) to be sent to each parallel environment. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.
+#' 
+#' 
 #' 
 #' @import data.table
 #' @importFrom future.apply future_lapply
 #' @importFrom lme4 lmer
 #' @importFrom GLMMadaptive mixed_model
 #' @import progressr
-#' 
-#' @param multi_sub it 
-#'  \itemize{
-#'    \item
-#'    \item
-#'  }
-#'  
-#' @param cell_type_padj adjust p-values for each sender-receiver pair or not
 #'  
 #' @export
 
@@ -20,21 +51,16 @@ ccc_analysis <- function(expression_matrix, metadata, contrast,
                          cell_id_col = "cell_id", cell_type_col = "cell_type", group_col = "group", covar_col = NULL, cdr = TRUE,
                          id_col = NULL, lmm_re = TRUE, logmm_re = TRUE,
                          sender = NULL, receiver = NULL,
-                         lr = c("omnipathr","ramilowski"),
-                         multi_sub = c("minimum","arithmetic_mean","geometric_mean","min_avg_gene","min_rate_gene"),
-                         sandwich = FALSE,
-                         verbose = TRUE,
-                         min_pct = 0.01, large_n = 2, min_avg_pct = 0,
-                         min_cell = 10,
-                         threshold = 0, sep_prop = 0, sep_n = 0, sep_detection = TRUE,
+                         lr = "omnipathr", multi_sub = "minimum",
+                         sandwich = FALSE, verbose = TRUE, min_cell = 10,
+                         min_pct = 0.01, large_n = 2, min_total_pct = 0,
+                         threshold = 0, sep_detection = TRUE, sep_prop = 0, sep_n = 0,
                          padj_method = "BH", cell_type_padj = TRUE,
                          control_logm = list(),
                          control_lmm = lme4::lmerControl() , control_logmm = list(),
-                         chunk_size = 10,
-                         nthreads = 1
+                         chunk_size = 10
 ) {
   old_nthreads <- getDTthreads()
-  setDTthreads(nthreads)
   on.exit(setDTthreads(old_nthreads), add = TRUE)
   
   assertthat::assert_that(assertthat::is.flag(verbose))
@@ -262,8 +288,8 @@ ccc_analysis <- function(expression_matrix, metadata, contrast,
       receptor_expr_values <- expression_matrix[receptor_genes, data_receiver_receptor$cell_id, drop = TRUE]
       
       # Add expression column to metadata copies
-      data_sender_ligand[, y := compute_expression_value(ligand_expr_values, multi_sub)]
-      data_receiver_receptor[, y := compute_expression_value(receptor_expr_values, multi_sub)]
+      data_sender_ligand[, y := compute_expression_value(ligand_expr_values, multi_sub, threshold)]
+      data_receiver_receptor[, y := compute_expression_value(receptor_expr_values, multi_sub, threshold)]
       
       # Compute expression rates
       compute_expression_rate <- function(data_subset) {
@@ -280,6 +306,14 @@ ccc_analysis <- function(expression_matrix, metadata, contrast,
       if (valid_ids < large_n) {
         next
       } 
+      
+      #######################
+      # another filtering step
+      total_pct_ligand <- data_sender_ligand[, mean(y > threshold)]
+      total_pct_receptor <- data_receiver_receptor[, mean(y > threshold)]
+      if (min(total_pct_ligand, total_pct_receptor) < min_total_pct) {
+        next
+      }
       
       ##
       # Add indicator column
@@ -329,7 +363,6 @@ ccc_analysis <- function(expression_matrix, metadata, contrast,
         random_formula <- as.formula("~ 1 | id")
         formula_logistic <- list("fixed" = fixed_formula, "random" = random_formula)
       }
-      
       
       # Fit models
       # fit_linear <- function(data, formula, name) {
@@ -394,6 +427,7 @@ ccc_analysis <- function(expression_matrix, metadata, contrast,
       # }
       
       fit_model <- function(part, data, formula, name) {
+        
         stopifnot(part == "linear" || part == "logistic")
         warnings. <- list()
         messages. <- list()
@@ -410,8 +444,7 @@ ccc_analysis <- function(expression_matrix, metadata, contrast,
                   lm(formula, data = data)
                 }
               }
-            }
-            if (part == "logistic") {
+            } else if (part == "logistic") {
               cond <- isTRUE(sep_detection) && detect_re_separation(dt = data, z_col = "z", id_col = "id", num_ids = num_ids, sep_prop = sep_prop, sep_n = sep_n)
               if (cond) {
                 stop("Complete or Quasi-complete separation detected.")
@@ -491,7 +524,9 @@ ccc_analysis <- function(expression_matrix, metadata, contrast,
          messages = results.message)
   }
   
+  setDTthreads(threads = 1)
   results_obj <- future_lapply(i_s, FUN = run_analysis)
+  setDTthreads(threads = old_nthreads)
   
   list.descriptive_stats <- lapply(results_obj, \(x) x$descriptive_stats)
   list.test_results <- lapply(results_obj, \(x) x$test_results)
@@ -499,12 +534,36 @@ ccc_analysis <- function(expression_matrix, metadata, contrast,
   list.warnings <- lapply(results_obj, \(x) x$warnings)
   list.messages <- lapply(results_obj, \(x) x$messages)
   
+  dt.test.all <- rbindlist(list.test_results, fill = TRUE)
+  # cell_type_padj
+  
+  # pval_cols <- c("pvalue_linear", "pvalue_logistic", "pvalue_hurdle", "pvalue_2part")
+  pval_cols <- grep("^pvalue", names(dt.test.all), value = TRUE)
+  
+  if (cell_type_padj) {
+    dt.test.all[, (paste0("padj_", sub("pvalue\\_", "", pval_cols))) := 
+                  lapply(.SD, function(p) p.adjust(p, method = padj_method)),
+                by = .(sender, receiver), .SDcols = pval_cols]
+  } else {
+    dt.test.all[, (paste0("padj_", sub("pvalue\\_", "", pval_cols))) := 
+                  lapply(.SD, function(p) p.adjust(p, method = padj_method)), 
+                .SDcols = pval_cols]
+  }
+  ordered_cols <- names(dt.test.all)
+  for (pval in rev(pval_cols)) {
+    padj <- sub("pvalue\\_", "padj_", pval)
+    if (padj %in% names(dt.test.all)) {
+      idx <- match(pval, ordered_cols)
+      ordered_cols <- append(ordered_cols[ordered_cols != padj], padj, after = idx)
+    }
+  }
+  setcolorder(dt.test.all, ordered_cols)
+  
   list(summary = as.data.frame(rbindlist(list.descriptive_stats)),
-       test = as.data.frame(rbindlist(list.test_results, fill = TRUE)),
+       test = as.data.frame(dt.test.all),
        errors = do.call(c, list.errors),
        warnings = do.call(c, list.warnings),
        messages = do.call(c, list.messages))
-  
 }
 
 

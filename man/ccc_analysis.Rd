@@ -2,7 +2,7 @@
 % Please edit documentation in R/ccc_analysis.R
 \name{ccc_analysis}
 \alias{ccc_analysis}
-\title{Title}
+\title{Perform Wald tests to identify differential cell-cell communication}
 \usage{
 ccc_analysis(
   expression_matrix,
@@ -18,37 +18,92 @@ ccc_analysis(
   logmm_re = TRUE,
   sender = NULL,
   receiver = NULL,
-  lr = c("omnipathr", "ramilowski"),
-  multi_sub = c("minimum", "arithmetic_mean", "geometric_mean", "min_avg_gene",
-    "min_rate_gene"),
+  lr = "omnipathr",
+  multi_sub = "minimum",
   sandwich = FALSE,
   verbose = TRUE,
+  min_cell = 10,
   min_pct = 0.01,
   large_n = 2,
-  min_avg_pct = 0,
-  min_cell = 10,
+  min_total_pct = 0,
   threshold = 0,
+  sep_detection = TRUE,
   sep_prop = 0,
   sep_n = 0,
-  sep_detection = TRUE,
   padj_method = "BH",
   cell_type_padj = TRUE,
   control_logm = list(),
   control_lmm = lme4::lmerControl(),
   control_logmm = list(),
-  chunk_size = 10,
-  nthreads = 1
+  chunk_size = 10
 )
 }
 \arguments{
-\item{multi_sub}{it 
+\item{expression_matrix}{a numeric matrix of normalized counts, with rows corresponding to genes and columns corresponding to cells. Both row names (gene symbols) and column names (cell identifiers) must be provided.}
+
+\item{metadata}{a data frame containing cell-level metadata (e.g., cell type, group, id, covariates).}
+
+\item{contrast}{a named numeric vector or a numeric matrix with column names. The names should match the levels of the variable being tested (specified by \code{group_col}). The testings are performed based on this.}
+
+\item{cell_id_col}{a character string specifying the name of the column in \code{metadata} that contains cell identifiers. These ID's should match the column names of \code{expression_matrix}. Defaults to \code{"cell_id"}.}
+
+\item{cell_type_col}{a character string specifying the name of the column in \code{metadata} that contains cell type annotations. Defaults to \code{"cell_type"}.}
+
+\item{group_col}{a character string specifying the name of the column in \code{metadata} that represents the variable to be tested. The values in this column should match the names specified in \code{contrast}. Defaults to \code{group}.}
+
+\item{covar_col}{a character string or a character vector specifying the column(s) in \code{metadata} that represent covariates to include in the model. Defaults to \code{NULL}, meaning no covariates are adjusted for.}
+
+\item{cdr}{logical scalar. If \code{TRUE} (the default), calculate and adjust for cellular detection rates (CDR). The CDR of a cell is defined as the number of genes with expression above \code{threshold} divided by the total number of genes.}
+
+\item{id_col}{a character string specifying the name of the column in \code{metadata} that contains individual-level (sample-level) ID's. Used for random effect modeling. Must be provided if \code{lmm_re == TRUE} or \code{logmm_re == TRUE}; otherwise, this can be omitted.}
+
+\item{lmm_re}{logical scalar. Should a random effect be included in the linear component of the hurdle model? If \code{TRUE} (the default), fit a linear mixed-effects model with a random intercept based on \code{id_col} for each ligand/receptor gene; if \code{FALSE}, fit a linear model without random effects.}
+
+\item{logmm_re}{logical scalar. Should a random effect be included in the logistic component of the hurdle model? If \code{TRUE} (the default), fit a logistic mixed-effects model with a random intercept based on \code{id_col} for each ligand/receptor gene; if \code{FALSE}, fit a logistic model without random effects.}
+
+\item{lr}{specifies the ligand-receptor database to use. Can be \code{"omnipathr"} (the default), \code{"ramilowski"}, or a user-supplied data frame. If \code{"omnipathr"} or \code{"ramilowski"} is provided, the corresponding built-in dataset is used. If a data frame is provided, it must contain exactly two columns named \code{"ligand"} and \code{"receptor"}, with gene symbols as entries. For multi-subunit ligands/receptors, the gene symbols of all subunits must be joined by \verb{_}. (e.g., \code{"CLCF1_CRLF1"} for a ligand composed of CLCF1 and CRLF1)}
+
+\item{multi_sub}{a character string specifying how to handle multi-subunit ligands/receptors.
 \itemize{
-  \item
-  \item
+\item \dQuote{\code{minimum}}: (the default) the expression value for each cell is defined as the minimum expression across all subunit genes.
+\item \dQuote{\code{arithmetic_mean}}: the expression value for each cell is defined as the arithmetic mean expression across all subunit genes.
+\item \dQuote{\code{geometric_mean}}: the expression value for each cell is defined as the geometric mean expression across all subunit genes.
+\item \dQuote{\code{min_avg_gene}}: the subunit gene with the minimum average expression is selected.
+\item \dQuote{\code{min_rate_gene}}: the subunit gene with the minimum expression rate is selected. The expression rate for a gene is calculated as the number of cells with expression above \code{threshold} divided by the total number of cells.
 }}
 
-\item{cell_type_padj}{adjust p-values for each sender-receiver pair or not}
+\item{sandwich}{logical scalar. If \code{TRUE}, sandwich standard errors are used in the calculations. Defaults to \code{FALSE}.}
+
+\item{verbose}{logical scalar. If \code{TRUE} (the default), display a progress bar. The default handler is "cli". This package uses the \pkg{progressr} framework for progress reporting, so users can customize the progress bar. See \code{\link[progressr:handlers]{progressr::handlers()}} for customizing progress bar behavior.}
+
+\item{min_cell}{integer scalar. Filter out cell types with fewer than \code{min_cell} cells. Defaults to 10.}
+
+\item{min_pct}{numeric scalar. Only test ligand-receptor pairs that are expressed above \code{threshold} in a minimum fraction of \code{min_pct} cells for \code{large_n} individuals/samples in sender and receiver cell types respectively. Defaults to 0.01.}
+
+\item{large_n}{integer scalar. Number of individuals/samples that are considered to be "large". Defaults to 2.}
+
+\item{min_total_pct}{numeric scalar. Only test ligand-receptor pairs that are detected (expression above \code{threshold}) in a minimum fraction of \code{min_total_pct} cells across all individuals/samples in sender and receiver cell types respectively. Defaults to 0.}
+
+\item{threshold}{numeric scalar. A gene is considered expressed in a cell if its expression is greater than \code{threshold}. Defaults to 0.}
+
+\item{sep_detection}{logical scalar. If \code{TRUE} (the default), detect complete or quasi-complete separation in logistic models.}
+
+\item{sep_prop}{numeric scalar. For each ligand/receptor gene, if it is expressed above/below \code{threshold} in all cells of more than a \code{sep_prop} fraction of individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.}
+
+\item{sep_n}{numeric scalar. For each ligand/receptor gene, if it is expressed above/below \code{threshold} in all cells of more than \code{sep_n} individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.}
+
+\item{padj_method}{a character string for multiple testing correction method. This is passed to \code{\link[stats:p.adjust]{stats::p.adjust()}}. Defaults to "BH".}
+
+\item{cell_type_padj}{logical scalar. If \code{TRUE} (the default), adjust p-values for each sender-receiver pair.}
+
+\item{control_logm}{control parameters for optimization in \code{\link[stats:glm]{stats::glm()}}.}
+
+\item{control_lmm}{control parameters for optimization in \code{\link[lme4:lmer]{lme4::lmer()}}.}
+
+\item{control_logmm}{control parameters for optimization in \link[GLMMadaptive:mixed_model]{GLMMadaptive::mixed_model}}
+
+\item{chunk_size}{integer scalar. The number of interaction pairs (each defined by a distinct combination of sender, receiver, ligand, and receptor) to be sent to each parallel environment. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.}
 }
 \description{
-Title
+Perform Wald tests to identify differential cell-cell communication
 }

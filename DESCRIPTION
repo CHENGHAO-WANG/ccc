@@ -1,6 +1,6 @@
 Package: ccc
 Type: Package
-Title: Identifying Differential Cell-Cell Communications from Single-Cell RNA-Sequencing Data
+Title: Identifying Differential Cell-Cell Communication from Single-Cell RNA-Sequencing Data
 Version: 0.1.0
 Authors@R: c(
     person("Chenghao", "Wang", email = "wangchenghaochn@gmail.com", role = c("aut", "cre")),
@@ -14,4 +14,5 @@ Imports: lme4, GLMMadaptive, assertthat, sandwich, clubSandwich, future, future.
 Suggests: 
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
+Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.2
