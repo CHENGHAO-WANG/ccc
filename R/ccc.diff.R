@@ -70,7 +70,7 @@
 #'   
 #' @export
 
-ccc_analysis <- function(expression_matrix, metadata, contrast,
+ccc.diff <- function(expression_matrix, metadata, contrast,
                          cell_id_col = "cell_id", cell_type_col = "cell_type", 
                          group_col = "group", covar_col = NULL, cdr = TRUE,
                          id_col = "id", lmm_re = TRUE, logmm_re = TRUE,

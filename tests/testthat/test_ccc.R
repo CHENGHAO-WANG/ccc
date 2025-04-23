@@ -1,4 +1,4 @@
-#context("ccc_analysis")
+#context("ccc.diff")
 
 # Simulate count matrix (genes x cells) with metadata
 # Each gene can be non-DE, cell type-specific DE, or condition-specific DE
@@ -199,19 +199,19 @@ library(future)
 oplan <- plan(multisession, workers = 4L)
 start.time <- Sys.time()
 expression_matrix <- log_normalize(count_matrix = as.matrix(expr_mat))
-a <- ccc_analysis(expression_matrix = expression_matrix, metadata = metadata,
+a <- ccc.diff(expression_matrix = expression_matrix, metadata = metadata,
                   group_col = "condition", id_col = "sample", lr = interaction_df[3:6,],
                   contrast = c(A = 1, B = -1), lmm_re = F, logmm_re = F, verbose = T)
 Sys.time() - start.time
 plan(oplan)
 expression_matrix <- log_normalize(count_matrix = expr_mat)
-a <- ccc_analysis(expression_matrix = expression_matrix, metadata = metadata,
+a <- ccc.diff(expression_matrix = expression_matrix, metadata = metadata,
                   group_col = "condition", id_col = "sample", lr = interaction_df[3:6,],
                   contrast = c(A = 1, B = -1), lmm_re = F, logmm_re = F, verbose = T)
 
 
 start.time <- Sys.time()
-b <- ccc_analysis(expression_matrix = expression_matrix, metadata = metadata,
+b <- ccc.diff(expression_matrix = expression_matrix, metadata = metadata,
                   group_col = "condition", id_col = "sample", lr = interaction_df[3:10,],
                   contrast = c(A = 1, B = -1), logmm_re = F)
 Sys.time() - start.time
