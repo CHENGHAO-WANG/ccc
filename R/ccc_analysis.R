@@ -1,4 +1,7 @@
-#' Perform Wald tests to identify differential cell-cell communication
+#' Identify Differential Cell-Cell Communication
+#' 
+#' For each communication pair (defined by a distinct combination of sender, receiver, ligand, and receptor), fit two gene-wise hurdle models (linear for expression levels > `threshold`; logistic for expression levels > `threshold` vs. expression levels <= `threshold`).
+#' Then perform Wald tests on the product of ligand expression levels in sender and receptor expression levels in receiver to identify differential cell-cell communication.
 #' 
 #' @param expression_matrix a numeric matrix of normalized counts, with rows corresponding to genes and columns corresponding to cells. Both row names (gene symbols) and column names (cell identifiers) must be provided.
 #' @param metadata a data frame containing cell-level metadata (e.g., cell type, group, id, covariates).
@@ -7,26 +10,26 @@
 #' @param cell_type_col a character string specifying the name of the column in `metadata` that contains cell type annotations. Defaults to `"cell_type"`.
 #' @param group_col a character string specifying the name of the column in `metadata` that represents the variable to be tested. The values in this column should match the names specified in `contrast`. Defaults to `group`.
 #' @param covar_col a character string or a character vector specifying the column(s) in `metadata` that represent covariates to include in the model. Defaults to `NULL`, meaning no covariates are adjusted for.
-#' @param cdr logical scalar. If `TRUE` (the default), calculate and adjust for cellular detection rates (CDR). The CDR of a cell is defined as the number of genes with expression above `threshold` divided by the total number of genes.
-#' @param id_col a character string specifying the name of the column in `metadata` that contains individual-level (sample-level) ID's. Used for random effect modeling. Must be provided if `lmm_re == TRUE` or `logmm_re == TRUE`; otherwise, this can be omitted.
+#' @param cdr logical scalar. If `TRUE` (the default), calculate and adjust for cellular detection rates (CDR). The CDR of a cell is defined as the number of genes with expression level above `threshold` divided by the total number of genes.
+#' @param id_col a character string specifying the name of the column in `metadata` that contains individual-level (sample-level) ID's. Used for random effect modeling. Must be provided if `lmm_re == TRUE` or `logmm_re == TRUE`; otherwise, this can be omitted. Defaults to `"id"`.
 #' @param lmm_re logical scalar. Should a random effect be included in the linear component of the hurdle model? If `TRUE` (the default), fit a linear mixed-effects model with a random intercept based on `id_col` for each ligand/receptor gene; if `FALSE`, fit a linear model without random effects.
 #' @param logmm_re logical scalar. Should a random effect be included in the logistic component of the hurdle model? If `TRUE` (the default), fit a logistic mixed-effects model with a random intercept based on `id_col` for each ligand/receptor gene; if `FALSE`, fit a logistic model without random effects.
 #' @param lr specifies the ligand-receptor database to use. Can be `"omnipathr"` (the default), `"ramilowski"`, or a user-supplied data frame. If `"omnipathr"` or `"ramilowski"` is provided, the corresponding built-in dataset is used. If a data frame is provided, it must contain exactly two columns named `"ligand"` and `"receptor"`, with gene symbols as entries. For multi-subunit ligands/receptors, the gene symbols of all subunits must be joined by `_`. (e.g., `"CLCF1_CRLF1"` for a ligand composed of CLCF1 and CRLF1)
 #' @param multi_sub a character string specifying how to handle multi-subunit ligands/receptors.
 #'  \itemize{
-#'    \item \dQuote{\code{minimum}}: (the default) the expression value for each cell is defined as the minimum expression across all subunit genes.
-#'    \item \dQuote{\code{arithmetic_mean}}: the expression value for each cell is defined as the arithmetic mean expression across all subunit genes.
-#'    \item \dQuote{\code{geometric_mean}}: the expression value for each cell is defined as the geometric mean expression across all subunit genes.
+#'    \item \dQuote{\code{minimum}}: (the default) the expression level for each cell is defined as the minimum expression across all subunit genes.
+#'    \item \dQuote{\code{arithmetic_mean}}: the expression level for each cell is defined as the arithmetic mean expression across all subunit genes.
+#'    \item \dQuote{\code{geometric_mean}}: the expression level for each cell is defined as the geometric mean expression across all subunit genes.
 #'    \item \dQuote{\code{min_avg_gene}}: the subunit gene with the minimum average expression is selected.
-#'    \item \dQuote{\code{min_rate_gene}}: the subunit gene with the minimum expression rate is selected. The expression rate for a gene is calculated as the number of cells with expression above `threshold` divided by the total number of cells.
+#'    \item \dQuote{\code{min_rate_gene}}: the subunit gene with the minimum expression rate is selected. The expression rate for a gene is calculated as the number of cells with expression level above `threshold` divided by the total number of cells.
 #'  }
 #' @param sandwich logical scalar. If `TRUE`, sandwich standard errors are used in the calculations. Defaults to `FALSE`.
 #' @param verbose logical scalar. If `TRUE` (the default), display a progress bar. The default handler is "cli". This package uses the \pkg{progressr} framework for progress reporting, so users can customize the progress bar. See [progressr::handlers()] for customizing progress bar behavior.
 #' @param min_cell integer scalar. Filter out cell types with fewer than `min_cell` cells. Defaults to 10.
 #' @param min_pct numeric scalar. Only test ligand-receptor pairs that are expressed above `threshold` in a minimum fraction of `min_pct` cells for `large_n` individuals/samples in sender and receiver cell types respectively. Defaults to 0.01.
 #' @param large_n integer scalar. Number of individuals/samples that are considered to be "large". Defaults to 2.
-#' @param min_total_pct numeric scalar. Only test ligand-receptor pairs that are detected (expression above `threshold`) in a minimum fraction of `min_total_pct` cells across all individuals/samples in sender and receiver cell types respectively. Defaults to 0.
-#' @param threshold numeric scalar. A gene is considered expressed in a cell if its expression is greater than `threshold`. Defaults to 0.
+#' @param min_total_pct numeric scalar. Only test ligand-receptor pairs that are detected (expression level above `threshold`) in a minimum fraction of `min_total_pct` cells across all individuals/samples in sender and receiver cell types respectively. Defaults to 0.
+#' @param threshold numeric scalar. A gene is considered expressed in a cell if its expression level is greater than `threshold`. Defaults to 0.
 #' @param sep_detection logical scalar. If `TRUE` (the default), detect complete or quasi-complete separation in logistic models.
 #' @param sep_prop numeric scalar. For each ligand/receptor gene, if it is expressed above/below `threshold` in all cells of more than a `sep_prop` fraction of individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.
 #' @param sep_n numeric scalar. For each ligand/receptor gene, if it is expressed above/below `threshold` in all cells of more than `sep_n` individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.
@@ -35,21 +38,42 @@
 #' @param control_logm control parameters for optimization in [stats::glm()].
 #' @param control_lmm control parameters for optimization in [lme4::lmer()].
 #' @param control_logmm control parameters for optimization in [GLMMadaptive::mixed_model].
-#' @param chunk_size integer scalar. The number of interaction pairs (each defined by a distinct combination of sender, receiver, ligand, and receptor) to be sent to each parallel environment. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.
+#' @param chunk_size integer scalar. The number of communication pairs (each defined by a distinct combination of sender, receiver, ligand, and receptor) to be sent to each parallel environment. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.
+#' @details
+#' This function perform differential cell-cell communication analysis. For each communication pair, a hurdle model is fitted to ligand expression data in sender and another hurdle model is fitted to receptor expression data in receiver.
+#' The delta method is applied to obtain appropriate standard errors for the product of ligand and receptor expression levels, using estimates from the fitted hurdle models. Then Wald tests are performed.
 #' 
+#' Users can either specify the relevant column names of `metadata` using the arguments `cell_id_col`, `cell_type_col`, `group_col`, `covar_col` (can be omitted if no covariates are to be adjusted for), and `id_col`.
+#' To adjust for CDR, simply set `cdr = TRUE` (This is also the default setting); do not calculate and add CDR manually to `metadata`.
 #' 
+#' For each ligand/receptor gene, if the model fitting fails or produce warnings or diagnostic messages, this function will return the relevant information in the output. If some p-values are missing in the output, users can check `errors` element of the output to find the corresponding error messages.
+#' 
+#' Parallelization is supported via \pkg{future}. Progress bars are customized using \pkg{progressr}.
+#' 
+#' @returns a list with the following elements:
+#'  \itemize{
+#'    \item{\code{summary}}: a data frame of descriptive statistics for ligand/receptor gene expressions in sender/receiver cell types.
+#'    \item{\code{test}}: a data frame containing the results of differential cell-cell communication analysis, including effect sizes, p-values, adjusted p-values, etc.
+#'    \item(\code{errors}): a list of communication pairs for which model fitting failed, along with corresponding error messages.
+#'    \item{\code{warnings}}: a list of communication pairs for which warnings are issued during model fitting, along with corresponding warning messages.
+#'    \item{\code{messages}}: a list of communication pairs for which diagnostic messages are generated during model fitting, along with corresponding messages.
+#'  }
 #' 
 #' @import data.table
 #' @importFrom future.apply future_lapply
 #' @importFrom lme4 lmer
 #' @importFrom GLMMadaptive mixed_model
 #' @import progressr
-#'  
+#' 
+#' @examples
+#' # example code
+#'   
 #' @export
 
 ccc_analysis <- function(expression_matrix, metadata, contrast,
-                         cell_id_col = "cell_id", cell_type_col = "cell_type", group_col = "group", covar_col = NULL, cdr = TRUE,
-                         id_col = NULL, lmm_re = TRUE, logmm_re = TRUE,
+                         cell_id_col = "cell_id", cell_type_col = "cell_type", 
+                         group_col = "group", covar_col = NULL, cdr = TRUE,
+                         id_col = "id", lmm_re = TRUE, logmm_re = TRUE,
                          sender = NULL, receiver = NULL,
                          lr = "omnipathr", multi_sub = "minimum",
                          sandwich = FALSE, verbose = TRUE, min_cell = 10,
@@ -180,7 +204,8 @@ ccc_analysis <- function(expression_matrix, metadata, contrast,
     }
   }
   if (isFALSE(lmm_re) && isFALSE(logmm_re) && !is.null(id_col)) {
-    warning("'id_col' is not NULL. This input will be ignored, because 'lmm_re' and 'logmm_re' are FALSE")
+    message("'id_col' is not NULL. This input will be ignored, because 'lmm_re' and 'logmm_re' are FALSE")
+    message("To suppress this message, set 'id_col = NULL'.")
     id_col <- NULL
   }
   

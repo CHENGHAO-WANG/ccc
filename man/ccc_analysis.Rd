@@ -2,7 +2,7 @@
 % Please edit documentation in R/ccc_analysis.R
 \name{ccc_analysis}
 \alias{ccc_analysis}
-\title{Perform Wald tests to identify differential cell-cell communication}
+\title{Identify Differential Cell-Cell Communication}
 \usage{
 ccc_analysis(
   expression_matrix,
@@ -13,7 +13,7 @@ ccc_analysis(
   group_col = "group",
   covar_col = NULL,
   cdr = TRUE,
-  id_col = NULL,
+  id_col = "id",
   lmm_re = TRUE,
   logmm_re = TRUE,
   sender = NULL,
@@ -53,9 +53,9 @@ ccc_analysis(
 
 \item{covar_col}{a character string or a character vector specifying the column(s) in \code{metadata} that represent covariates to include in the model. Defaults to \code{NULL}, meaning no covariates are adjusted for.}
 
-\item{cdr}{logical scalar. If \code{TRUE} (the default), calculate and adjust for cellular detection rates (CDR). The CDR of a cell is defined as the number of genes with expression above \code{threshold} divided by the total number of genes.}
+\item{cdr}{logical scalar. If \code{TRUE} (the default), calculate and adjust for cellular detection rates (CDR). The CDR of a cell is defined as the number of genes with expression level above \code{threshold} divided by the total number of genes.}
 
-\item{id_col}{a character string specifying the name of the column in \code{metadata} that contains individual-level (sample-level) ID's. Used for random effect modeling. Must be provided if \code{lmm_re == TRUE} or \code{logmm_re == TRUE}; otherwise, this can be omitted.}
+\item{id_col}{a character string specifying the name of the column in \code{metadata} that contains individual-level (sample-level) ID's. Used for random effect modeling. Must be provided if \code{lmm_re == TRUE} or \code{logmm_re == TRUE}; otherwise, this can be omitted. Defaults to \code{"id"}.}
 
 \item{lmm_re}{logical scalar. Should a random effect be included in the linear component of the hurdle model? If \code{TRUE} (the default), fit a linear mixed-effects model with a random intercept based on \code{id_col} for each ligand/receptor gene; if \code{FALSE}, fit a linear model without random effects.}
 
@@ -65,11 +65,11 @@ ccc_analysis(
 
 \item{multi_sub}{a character string specifying how to handle multi-subunit ligands/receptors.
 \itemize{
-\item \dQuote{\code{minimum}}: (the default) the expression value for each cell is defined as the minimum expression across all subunit genes.
-\item \dQuote{\code{arithmetic_mean}}: the expression value for each cell is defined as the arithmetic mean expression across all subunit genes.
-\item \dQuote{\code{geometric_mean}}: the expression value for each cell is defined as the geometric mean expression across all subunit genes.
+\item \dQuote{\code{minimum}}: (the default) the expression level for each cell is defined as the minimum expression across all subunit genes.
+\item \dQuote{\code{arithmetic_mean}}: the expression level for each cell is defined as the arithmetic mean expression across all subunit genes.
+\item \dQuote{\code{geometric_mean}}: the expression level for each cell is defined as the geometric mean expression across all subunit genes.
 \item \dQuote{\code{min_avg_gene}}: the subunit gene with the minimum average expression is selected.
-\item \dQuote{\code{min_rate_gene}}: the subunit gene with the minimum expression rate is selected. The expression rate for a gene is calculated as the number of cells with expression above \code{threshold} divided by the total number of cells.
+\item \dQuote{\code{min_rate_gene}}: the subunit gene with the minimum expression rate is selected. The expression rate for a gene is calculated as the number of cells with expression level above \code{threshold} divided by the total number of cells.
 }}
 
 \item{sandwich}{logical scalar. If \code{TRUE}, sandwich standard errors are used in the calculations. Defaults to \code{FALSE}.}
@@ -82,9 +82,9 @@ ccc_analysis(
 
 \item{large_n}{integer scalar. Number of individuals/samples that are considered to be "large". Defaults to 2.}
 
-\item{min_total_pct}{numeric scalar. Only test ligand-receptor pairs that are detected (expression above \code{threshold}) in a minimum fraction of \code{min_total_pct} cells across all individuals/samples in sender and receiver cell types respectively. Defaults to 0.}
+\item{min_total_pct}{numeric scalar. Only test ligand-receptor pairs that are detected (expression level above \code{threshold}) in a minimum fraction of \code{min_total_pct} cells across all individuals/samples in sender and receiver cell types respectively. Defaults to 0.}
 
-\item{threshold}{numeric scalar. A gene is considered expressed in a cell if its expression is greater than \code{threshold}. Defaults to 0.}
+\item{threshold}{numeric scalar. A gene is considered expressed in a cell if its expression level is greater than \code{threshold}. Defaults to 0.}
 
 \item{sep_detection}{logical scalar. If \code{TRUE} (the default), detect complete or quasi-complete separation in logistic models.}
 
@@ -100,10 +100,36 @@ ccc_analysis(
 
 \item{control_lmm}{control parameters for optimization in \code{\link[lme4:lmer]{lme4::lmer()}}.}
 
-\item{control_logmm}{control parameters for optimization in \link[GLMMadaptive:mixed_model]{GLMMadaptive::mixed_model}}
+\item{control_logmm}{control parameters for optimization in \link[GLMMadaptive:mixed_model]{GLMMadaptive::mixed_model}.}
 
-\item{chunk_size}{integer scalar. The number of interaction pairs (each defined by a distinct combination of sender, receiver, ligand, and receptor) to be sent to each parallel environment. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.}
+\item{chunk_size}{integer scalar. The number of communication pairs (each defined by a distinct combination of sender, receiver, ligand, and receptor) to be sent to each parallel environment. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.}
+}
+\value{
+a list with the following elements:
+\itemize{
+\item{\code{summary}}: a data frame of descriptive statistics for ligand/receptor gene expressions in sender/receiver cell types.
+\item{\code{test}}: a data frame containing the results of differential cell-cell communication analysis, including effect sizes, p-values, adjusted p-values, etc.
+\item(\code{errors}): a list of communication pairs for which model fitting failed, along with corresponding error messages.
+\item{\code{warnings}}: a list of communication pairs for which warnings are issued during model fitting, along with corresponding warning messages.
+\item{\code{messages}}: a list of communication pairs for which diagnostic messages are generated during model fitting, along with corresponding messages.
+}
 }
 \description{
-Perform Wald tests to identify differential cell-cell communication
+For each communication pair (defined by a distinct combination of sender, receiver, ligand, and receptor), fit two gene-wise hurdle models (linear for expression levels > \code{threshold}; logistic for expression levels > \code{threshold} vs. expression levels <= \code{threshold}).
+Then perform Wald tests on the product of ligand expression levels in sender and receptor expression levels in receiver to identify differential cell-cell communication.
+}
+\details{
+This function perform differential cell-cell communication analysis. For each communication pair, a hurdle model is fitted to ligand expression data in sender and another hurdle model is fitted to receptor expression data in receiver.
+The delta method is applied to obtain appropriate standard errors for the product of ligand and receptor expression levels, using estimates from the fitted hurdle models. Then Wald tests are performed.
+
+Users can either specify the relevant column names of \code{metadata} using the arguments \code{cell_id_col}, \code{cell_type_col}, \code{group_col}, \code{covar_col} (can be omitted if no covariates are to be adjusted for), and \code{id_col}.
+To adjust for CDR, simply set \code{cdr = TRUE} (This is also the default setting); do not calculate and add CDR manually to \code{metadata}.
+
+For each ligand/receptor gene, if the model fitting fails or produce warnings or diagnostic messages, this function will return the relevant information in the output. If some p-values are missing in the output, users can check \code{errors} element of the output to find the corresponding error messages.
+
+Parallelization is supported via \pkg{future}. Progress bars are customized using \pkg{progressr}.
+}
+\examples{
+# example code
+  
 }

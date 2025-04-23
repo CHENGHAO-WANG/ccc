@@ -8,7 +8,7 @@
 #' @param covar A vector of column names to be centered.
 #' @return A character vector containing the names of the columns that were centered.
 #'
-#' @examples
+#' 
 #' dt <- data.table(
 #'   A = factor(c("a", "b", "a")),
 #'   B = c(1, 2, 3),
@@ -245,7 +245,7 @@ compute_cdr <- function(expression_matrix, metadata_subset, threshold) {
   expression_subset <- expression_matrix[, common_cells, drop = FALSE]
   
   # Calculate cdr: fraction of genes with expression > threshold for each cell
-  cdr_values <- colMeans(expression_subset > threshold)
+  cdr_values <- Matrix::colMeans(expression_subset > threshold)
   
   # Merge results with metadata_subset
   metadata_subset[, cdr := cdr_values[match(cell_id, names(cdr_values))]]
@@ -260,7 +260,7 @@ compute_expression_value <- function(expr_values, multi_sub, threshold) {
   switch(
     multi_sub,
     "minimum" = apply(expr_values, 2L, min),
-    "arithmetic_mean" = colMeans(expr_values),
+    "arithmetic_mean" = Matrix::colMeans(expr_values),
     "geometric_mean" = apply(expr_values, 2L, FUN = function(x) prod(x)^(1 / length(x))),
     "min_avg_gene" = {
       gene_means <- rowMeans(expr_values)

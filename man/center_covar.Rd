@@ -13,20 +13,19 @@ center_covar(dt, covar)
 }
 \value{
 A character vector containing the names of the columns that were centered.
-}
-\description{
-Preprocess a data.table: center specified columns (numerical and converted categorical) in place.
-}
-\examples{
+
 dt <- data.table(
-  A = factor(c("a", "b", "a")),
-  B = c(1, 2, 3),
-  C = c("x", "y", "z"),
-  D = 4:7,
-  E = 8:11
+A = factor(c("a", "b", "a")),
+B = c(1, 2, 3),
+C = c("x", "y", "z"),
+D = 4:7,
+E = 8:11
 )
 covar_cols <- c("A", "B", "E")
 centered_cols <- preprocess_dt_center_covar_inplace(dt, covar_cols)
 print(centered_cols)
 print(dt) # The original 'dt' is now modified
+}
+\description{
+Preprocess a data.table: center specified columns (numerical and converted categorical) in place.
 }

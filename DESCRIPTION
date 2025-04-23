@@ -4,13 +4,22 @@ Title: Identifying Differential Cell-Cell Communication from Single-Cell RNA-Seq
 Version: 0.1.0
 Authors@R: c(
     person("Chenghao", "Wang", email = "wangchenghaochn@gmail.com", role = c("aut", "cre")),
+    person("Yishu", "Zhang", role = "aut"),
     person("Di", "Wu", role = "aut"))
 Description: More about what it does (maybe more than one line)
     Use four spaces when indenting paragraphs within the Description.
 License: GPL (>= 3)
 Encoding: UTF-8
 LazyData: true
-Imports: lme4, GLMMadaptive, assertthat, sandwich, clubSandwich, future, future.apply, progressr, Matrix
+Imports: lme4, 
+         GLMMadaptive,
+         assertthat, 
+         sandwich, 
+         clubSandwich, 
+         future, 
+         future.apply, 
+         progressr, 
+         Matrix
 Suggests: 
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
