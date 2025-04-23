@@ -66,7 +66,21 @@
 #' @import progressr
 #' 
 #' @examples
-#' # example code
+#' \dontrun{
+#'   # Not run
+#'   # Data not included; please refer to the vignette.
+#'   a <- ccc.diff(expression_matrix = expression_matrix, metadata = metadata,
+#'    group_col = "condition", id_col = "sample", lr = interaction_df,
+#'    contrast = c(A = 1, B = -1), lmm_re = TRUE, logmm_re = FALSE)
+#'   
+#'   # Not run
+#'   library(future)
+#'   oplan <- plan(multisession, workers = 4L) # run in parallel
+#'   a <- ccc.diff(expression_matrix = expression_matrix, metadata = metadata,
+#'    group_col = "condition", id_col = "sample", lr = interaction_df,
+#'    contrast = c(A = 1, B = -1), lmm_re = TRUE, logmm_re = FALSE)
+#'   plan(oplan)
+#' }
 #'   
 #' @export
 

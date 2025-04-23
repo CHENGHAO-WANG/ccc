@@ -1,0 +1,46 @@
+[2025-04-23 20:07:17] [INFO]    [OmnipathR] Welcome to OmnipathR!
+[2025-04-23 20:07:17] [INFO]    [OmnipathR] OmnipathR version: 3.14.0
+[2025-04-23 20:07:17] [TRACE]   [OmnipathR] Reading JSON from `C:\Users\wangc\AppData\Local\Cache\OmnipathR/cache.json` (encoding: UTF-8).
+[2025-04-23 20:07:17] [TRACE]   [OmnipathR] JSON validation successful: TRUE
+[2025-04-23 20:07:18] [INFO]    [OmnipathR] Initialized cache: `C:\Users\wangc\AppData\Local\Cache\OmnipathR`.
+[2025-04-23 20:07:18] [TRACE]   [OmnipathR] Reading JSON from `C:/Users/wangc/AppData/Local/R/win-library/4.4/OmnipathR/db/db_def.json` (encoding: UTF-8).
+[2025-04-23 20:07:18] [TRACE]   [OmnipathR] JSON validation successful: TRUE
+[2025-04-23 20:07:18] [TRACE]   [OmnipathR] Reading JSON from `C:/Users/wangc/AppData/Local/R/win-library/4.4/OmnipathR/internal/magic_bytes.json` (encoding: UTF-8).
+[2025-04-23 20:07:18] [TRACE]   [OmnipathR] JSON validation successful: TRUE
+[2025-04-23 20:07:18] [TRACE]   [OmnipathR] Reading JSON from `C:/Users/wangc/AppData/Local/R/win-library/4.4/OmnipathR/internal/urls.json` (encoding: UTF-8).
+[2025-04-23 20:07:18] [TRACE]   [OmnipathR] JSON validation successful: TRUE
+[2025-04-23 20:07:18] [TRACE]   [OmnipathR] Reading JSON from `C:/Users/wangc/AppData/Local/R/win-library/4.4/OmnipathR/internal/id_types.json` (encoding: UTF-8).
+[2025-04-23 20:07:18] [TRACE]   [OmnipathR] JSON validation successful: TRUE
+[2025-04-23 20:07:18] [INFO]    [OmnipathR] Loading database `Ensembl and OMA organism names`.
+[2025-04-23 20:07:18] [INFO]    [OmnipathR] Looking up in cache `https://www.ensembl.org/info/about/species.html`: key=7332486db7400730697234bad76ca0c8e4d00799, latest version=1.
+[2025-04-23 20:07:18] [TRACE]   [OmnipathR] Cache file path: C:\Users\wangc\AppData\Local\Cache\OmnipathR/7332486db7400730697234bad76ca0c8e4d00799-1.html
+[2025-04-23 20:08:26] [INFO]    [OmnipathR] Loading database `Ensembl and OMA organism names`.
+[2025-04-23 20:08:26] [INFO]    [OmnipathR] Looking up in cache `https://www.ensembl.org/info/about/species.html`: key=7332486db7400730697234bad76ca0c8e4d00799, latest version=1.
+[2025-04-23 20:08:26] [TRACE]   [OmnipathR] Cache file path: C:\Users\wangc\AppData\Local\Cache\OmnipathR/7332486db7400730697234bad76ca0c8e4d00799-1.html
+[2025-04-23 20:08:27] [TRACE]   [OmnipathR] Looking up in cache: `https://omabrowser.org/All/oma-species.txt`.
+[2025-04-23 20:08:27] [TRACE]   [OmnipathR] Loaded data from RDS `C:\Users\wangc\AppData\Local\Cache\OmnipathR/30e690cbb55dfc63b5903ab337f34ffc2f4be397-1.rds`.
+[2025-04-23 20:08:27] [INFO]    [OmnipathR] Loaded database `Ensembl and OMA organism names`.
+[2025-04-23 20:08:27] [TRACE]   [OmnipathR] Organism(s): 9606
+[2025-04-23 20:08:27] [TRACE]   [OmnipathR] Orthology targets: 
+[2025-04-23 20:08:27] [TRACE]   [OmnipathR] Looking up in cache: `https://omnipathdb.org/interactions?genesymbols=yes&datasets=omnipath,ligrecextra&organisms=9606&fields=datasets,sources,references,curation_effort&license=academic`
+[2025-04-23 20:08:27] [TRACE]   [OmnipathR] Loaded data from RDS `C:\Users\wangc\AppData\Local\Cache\OmnipathR/498f91238951df23d4d71705063f40254eddbfbf-1.rds`.
+[2025-04-23 20:08:27] [INFO]    [OmnipathR] Loaded from cache: `https://omnipathdb.org/interactions?genesymbols=yes&datasets=omnipath,ligrecextra&organisms=9606&fields=datasets,sources,references,curation_effort&license=academic`
+[2025-04-23 20:08:29] [SUCCESS] [OmnipathR] Loaded 84409 interactions from cache.
+[2025-04-23 20:08:29] [TRACE]   [OmnipathR] Organism(s): 9606
+[2025-04-23 20:08:29] [TRACE]   [OmnipathR] Orthology targets: 
+[2025-04-23 20:08:29] [TRACE]   [OmnipathR] Looking up in cache: `https://omnipathdb.org/intercell?scope=generic&parent=ligand&causality=trans&license=academic`
+[2025-04-23 20:08:29] [TRACE]   [OmnipathR] Loaded data from RDS `C:\Users\wangc\AppData\Local\Cache\OmnipathR/2a15aeb93fb3cf6bac1547f2ba66c2fc7b13dbb7-1.rds`.
+[2025-04-23 20:08:29] [INFO]    [OmnipathR] Loaded from cache: `https://omnipathdb.org/intercell?scope=generic&parent=ligand&causality=trans&license=academic`
+[2025-04-23 20:08:29] [SUCCESS] [OmnipathR] Loaded 14473 intercellular communication role records from cache.
+[2025-04-23 20:08:29] [TRACE]   [OmnipathR] Organism(s): 9606
+[2025-04-23 20:08:29] [TRACE]   [OmnipathR] Orthology targets: 
+[2025-04-23 20:08:29] [TRACE]   [OmnipathR] Looking up in cache: `https://omnipathdb.org/intercell?aspect=locational&parent=secreted,plasma_membrane_transmembrane,plasma_membrane_peripheral&license=academic`
+[2025-04-23 20:08:29] [TRACE]   [OmnipathR] Loaded data from RDS `C:\Users\wangc\AppData\Local\Cache\OmnipathR/9ecbbba7b7129c316d69501f7af5c2aced05a498-1.rds`.
+[2025-04-23 20:08:29] [INFO]    [OmnipathR] Loaded from cache: `https://omnipathdb.org/intercell?aspect=locational&parent=secreted,plasma_membrane_transmembrane,plasma_membrane_peripheral&license=academic`
+[2025-04-23 20:08:29] [SUCCESS] [OmnipathR] Loaded 21862 intercellular communication role records from cache.
+[2025-04-23 20:08:30] [TRACE]   [OmnipathR] Organism(s): 9606
+[2025-04-23 20:08:30] [TRACE]   [OmnipathR] Orthology targets: 
+[2025-04-23 20:08:30] [TRACE]   [OmnipathR] Looking up in cache: `https://omnipathdb.org/intercell?scope=generic&parent=receptor&causality=rec&license=academic`
+[2025-04-23 20:08:31] [TRACE]   [OmnipathR] Loaded data from RDS `C:\Users\wangc\AppData\Local\Cache\OmnipathR/25fe0675450687d111d5db59b62172077f839cdb-1.rds`.
+[2025-04-23 20:08:31] [INFO]    [OmnipathR] Loaded from cache: `https://omnipathdb.org/intercell?scope=generic&parent=receptor&causality=rec&license=academic`
+[2025-04-23 20:08:31] [SUCCESS] [OmnipathR] Loaded 32950 intercellular communication role records from cache.
