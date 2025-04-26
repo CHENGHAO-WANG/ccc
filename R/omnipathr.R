@@ -4,9 +4,9 @@
 #' Each Multimeric ligand/receptor is represented by concatenating the gene symbols of all constituent subunits using underscores (`_`).
 #'
 #' @format ## `omnipathr`
-#' a data frame with 1946 rows and 2 columns: `ligand` and `receptor`.
+#' A data frame with 1946 rows and 2 columns: `ligand` and `receptor`.
 #' 
-#' @source the dataset was obtained using the \pkg{OmnipathR} package (version 3.14.0).
+#' @source The dataset was obtained using the \pkg{OmnipathR} package (version 3.14.0).
 #' The package is available on Bioconductor: \url{https://www.bioconductor.org/packages/release/bioc/html/OmnipathR.html}.
 #' 
 #' @references D Turei, A Valdeolivas, L Gul, N Palacio-Escat, M Klein, O Ivanova, M Olbei, A Gabor, F

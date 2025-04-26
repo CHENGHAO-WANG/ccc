@@ -4,7 +4,7 @@
 #' Only literature supported ligand-receptor pairs are kept.
 #' 
 #' @format ## `ramilowski`
-#' a data frame with 1894 rows and 2 columns: `ligand` and `receptor`.
+#' A data frame with 1894 rows and 2 columns: `ligand` and `receptor`.
 #' 
 #' @source \url{https://static-content.springer.com/esm/art%3A10.1038%2Fncomms8866/MediaObjects/41467_2015_BFncomms8866_MOESM611_ESM.xlsx}
 #' (Supplementary data 2 of the reference paper)

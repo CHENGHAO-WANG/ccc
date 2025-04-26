@@ -20,38 +20,72 @@
 #' centered_cols <- preprocess_dt_center_covar_inplace(dt, covar_cols)
 #' print(centered_cols)
 #' print(dt) # The original 'dt' is now modified
-center_covar<- function(dt, covar) {
-  # Ensure dt is a data.table
-  # setDT(dt)
+# center_covar<- function(dt, covar) {
+#   # Ensure dt is a data.table
+#   # setDT(dt)
+#   
+#   # covar_exists <- covar %in% names(dt)
+#   # if (!all(covar_exists)) {
+#   #   stop(paste0("The following columns specified in covar do not exist in the data.table: ", paste(covar[!covar_exists], collapse = ", ")))
+#   # }
+#   
+#   categorical_covar <- covar[sapply(dt[, covar, with = FALSE], function(col) is.factor(col) || is.character(col))]
+#   centered_column_names <- character(0) # Initialize an empty vector to store centered column names
+#   
+#   for (col_name in categorical_covar) {
+#     col <- dt[[col_name]]
+#     levels_col <- unique(col)
+#     for (level in levels_col) {
+#       new_col_name <- paste0(col_name, "_", level)
+#       dt[, (new_col_name) := as.integer(col == level)]
+#       centered_column_names <- c(centered_column_names, new_col_name) # Add new column name
+#     }
+#     dt[, (col_name) := NULL]
+#     covar <- c(covar[covar != col_name], names(dt)[startsWith(names(dt), paste0(col_name, "_"))])
+#   }
+#   
+#   for (col_name in covar) {
+#     dt[, (col_name) := scale(dt[[col_name]], center = TRUE, scale = FALSE)]
+#     centered_column_names <- c(centered_column_names, col_name) # Add centered column name
+#   }
+#   
+#   return(unique(centered_column_names)) # Return the unique names of centered columns
+# }
+
+center_covar <- function(dt, covar) {
+  # if (!is.data.table(dt)) stop("Input 'dt' must be a data.table.")
   
-  covar_exists <- covar %in% names(dt)
-  # if (!all(covar_exists)) {
-  #   stop(paste0("The following columns specified in covar do not exist in the data.table: ", paste(covar[!covar_exists], collapse = ", ")))
+  # missing_covar <- covar[!covar %in% names(dt)]
+  # if (length(missing_covar) > 0) {
+  #   stop("The following columns do not exist in 'dt': ", paste(missing_covar, collapse = ", "))
   # }
   
-  categorical_covar <- covar[sapply(dt[, covar, with = FALSE], function(col) is.factor(col) || is.character(col))]
-  centered_column_names <- character(0) # Initialize an empty vector to store centered column names
-  
-  for (col_name in categorical_covar) {
-    col <- dt[[col_name]]
-    levels_col <- unique(col)
-    for (level in levels_col) {
-      new_col_name <- paste0(col_name, "_", level)
-      dt[, (new_col_name) := as.integer(col == level)]
-      centered_column_names <- c(centered_column_names, new_col_name) # Add new column name
-    }
-    dt[, (col_name) := NULL]
-    covar <- c(covar[covar != col_name], names(dt)[startsWith(names(dt), paste0(col_name, "_"))])
-  }
+  centered_column_names <- character(0)
   
   for (col_name in covar) {
-    dt[, (col_name) := scale(dt[[col_name]], center = TRUE, scale = FALSE)]
-    centered_column_names <- c(centered_column_names, col_name) # Add centered column name
+    col <- dt[[col_name]]
+    
+    if (is.factor(col) || is.character(col)) {
+      levels_col <- sort(unique(col))  # you could use levels(col) if it's a factor and you want to preserve order
+      ref_level <- levels_col[1]       # drop the first level
+      dummy_levels <- levels_col[levels_col != ref_level]
+      
+      for (level in dummy_levels) {
+        new_col_name <- paste0(col_name, "_", level)
+        dt[, (new_col_name) := as.integer(col == level)]
+        dt[, (new_col_name) := scale(.SD[[1]], center = TRUE, scale = FALSE), .SDcols = new_col_name] 
+        centered_column_names <- c(centered_column_names, new_col_name)
+      }
+      
+      dt[, (col_name) := NULL]  # remove original
+    } else {
+      dt[, (col_name) := scale(col, center = TRUE, scale = FALSE)]
+      centered_column_names <- c(centered_column_names, col_name)
+    }
   }
   
-  return(unique(centered_column_names)) # Return the unique names of centered columns
+  return(centered_column_names)
 }
-
 
 
 detect_re_separation <- function(dt, z_col, id_col, num_ids = NULL, sep_prop = 0, sep_n = 0) {
@@ -481,3 +515,17 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
   
   
 }
+
+
+## truncated normal
+rtrunc_norm <- function(n, mean = 0, sd = 1, lower = -Inf, upper = Inf) {
+  lower_p <- pnorm(lower, mean = mean, sd = sd)
+  upper_p <- pnorm(upper, mean = mean, sd = sd)
+  
+  u_samples <- runif(n, min = lower_p, max = upper_p)
+  
+  normal_samples <- qnorm(u_samples, mean = mean, sd = sd)
+  
+  normal_samples
+}
+

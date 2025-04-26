@@ -1,7 +1,7 @@
 #' Identify Differential Cell-Cell Communication
 #' 
 #' For each communication pair (defined by a distinct combination of sender, receiver, ligand, and receptor), fit two gene-wise hurdle models (linear for expression levels > `threshold`; logistic for expression levels > `threshold` vs. expression levels <= `threshold`).
-#' Then perform Wald tests on the product of ligand expression levels in sender and receptor expression levels in receiver to identify differential cell-cell communication.
+#' Then perform Wald tests on the product of ligand expression levels in sender and receptor expression levels in receiver for differential cell-cell communication.
 #' 
 #' @param expression_matrix a numeric matrix of normalized counts, with rows corresponding to genes and columns corresponding to cells. Both row names (gene symbols) and column names (cell identifiers) must be provided.
 #' @param metadata a data frame containing cell-level metadata (e.g., cell type, group, id, covariates).
@@ -50,7 +50,7 @@
 #' 
 #' Parallelization is supported via \pkg{future}. Progress bars are customized using \pkg{progressr}.
 #' 
-#' @returns a list with the following elements:
+#' @returns A list with the following elements:
 #'  \itemize{
 #'    \item{\code{summary}}: a data frame of descriptive statistics for ligand/receptor gene expressions in sender/receiver cell types.
 #'    \item{\code{test}}: a data frame containing the results of differential cell-cell communication analysis, including effect sizes, p-values, adjusted p-values, etc.

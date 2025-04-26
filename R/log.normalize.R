@@ -5,7 +5,7 @@
 #' @param count_matrix a numeric matrix of raw counts, with rows corresponding to genes and columns corresponding to cells.
 #' @param scale_factor numeric. The scale factor fro cell-level normalization. Defaults to 10000.
 #' @param base numeric. The base of the log transformation. Defaults to `exp(1)`.
-#' @returns a numeric matrix of normalized counts.
+#' @returns A numeric matrix of normalized counts.
 #' @examples
 #' set.seed(123)
 #' raw <- matrix(rnbinom(100, mu = 1.5, size = 2), nrow = 20)
