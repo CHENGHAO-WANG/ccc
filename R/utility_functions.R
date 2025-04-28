@@ -529,3 +529,10 @@ rtrunc_norm <- function(n, mean = 0, sd = 1, lower = -Inf, upper = Inf) {
   normal_samples
 }
 
+## inverse_gamma
+rinvgamma <- function(n, shape, rate = 1, scale = 1/rate) {
+  1/rgamma(n, shape, scale)
+}
+
+
+
