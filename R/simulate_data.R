@@ -206,6 +206,7 @@ dispersion_rate <- 1
 baseline_log_mu <- rnorm(n_genes, mean = baseline_log_mu_mean, sd = baseline_log_mu_sd)
 dispersion <- rgamma(n_genes, shape = dispersion_shape, rate = dispersion_rate)  # gene-specific dispersion
 
+gene_info[, disperion := dispersion, baseline_log_mu := baseline_log_mu]
 # -----------------------------
 # Sample random intercepts for sample-effect genes
 # -----------------------------
@@ -224,16 +225,19 @@ random_intercepts_sigma <- sqrt(rinvgamma(n = length(sample_effect_genes), shape
 # )
 random_intercepts[sample_effect_genes, ] <- matrix(rnorm(n_sample_eff * total_samples), nrow = n_sample_eff, ncol = total_samples) * random_intercepts_sigma 
 
+gene_info[, within_sample_correlation := FALSE]  # Initialize to FALSE
+gene_info[gene_id %in% sample_effect_genes, within_sample_correlation := TRUE]
+
 # -----------------------------
 # Cell type effects
 # -----------------------------
 n_ct_specific <- round(n_genes * prop_cell_type_specific)
 
 # Check if the total number of cell type-specific genes exceeds the total number of available genes
-total_cell_type_specific <- n_ct_specific * n_celltypes - similarity * (n_celltypes - 1)
+total_cell_type_specific <- n_ct_specific * n_celltypes #- similarity * (n_celltypes - 1)
 
 if (total_cell_type_specific > n_genes) {
-  stop("The total number of cell type-specific genes exceeds the total number of available genes. Please provide a different value for 'prop_cell_type_specific', 'similarity', or 'n_celltypes'.")
+  stop("The total number of cell type-specific genes exceeds the total number of available genes. Please provide a different value for 'prop_cell_type_specific' or 'n_celltypes'.")
 }
 
 if (is.null(logfc_ct) || length(logfc_ct) != n_cell_types) {
@@ -245,47 +249,67 @@ if (is.null(prop_pos_ct) || length(prop_pos_ct) != n_cell_types) {
   message("prop_pos_ct not provided or incorrect length. Simulated instead.")
 }
 
-if (n_ct_specific > 0) {
-  is_ct_specific <- matrix(FALSE, nrow = n_genes, ncol = n_celltypes)
-  colnames(is_ct_specific) <- cell_types
+cell_type_effects <- matrix(0, nrow = n_genes, ncol = n_cell_types)
+colnames(cell_type_effects) <- cell_types
+rownames(cell_type_effects) <- all_genes
+
+available_genes <- all_genes
+for (i in seq_along(cell_types)) {
+  ct <- cell_types[i]
+  # genes_for_ct <- sample(ct_specific_genes, round(length(ct_specific_genes) / 2))
+  genes_for_ct <- sample(available_genes, n_ct_specific)
+  available_genes <- setdiff(available_genes, genes_for_ct)
+  signs <- sample(c(-1, 1), size = length(genes_for_ct), replace = TRUE,
+                  prob = c(1 - prop_pos_ct[i], prop_pos_ct[i]))
+  effect_sizes <- rgamma(length(genes_for_ct), shape = 4, rate = 4 / logfc_ct[i])
+  cell_type_effects[genes_for_ct, ct] <- signs * effect_sizes
   
-  n_common <- round(n_ct_specific * similarity)
-  n_real_per_ct <- n_ct_specific - n_common
-  
-  common_genes <- sample(all_genes, n_common)
-  
-  available_genes <- setdiff(all_genes, common_genes)
-  cell_type_genes_list <- vector("list", n_celltypes)
-  for (i in seq_len(n_celltypes)) {
-    selected <- sample(available_genes, n_real_per_ct)
-    cell_type_genes_list[[i]] <- c(selected, common_genes)
-    available_genes <- setdiff(available_genes, selected)
-  }
-  ##
-  for (i in seq_len(n_celltypes)) {
-    is_ct_specific[all_genes %in% cell_type_genes_list[[i]], i] <- TRUE
-  }
-  
-  cell_type_effects <- matrix(0, nrow = n_genes, ncol = n_cell_types)
-  colnames(cell_type_effects) <- cell_types
-  rownames(cell_type_effects) <- all_genes
-  
-  for (i in seq_along(cell_types)) {
-    ct <- cell_types[i]
-    # genes_for_ct <- sample(ct_specific_genes, round(length(ct_specific_genes) / 2))
-    genes_for_ct <- cell_type_genes_list[[i]]
-    signs <- sample(c(-1, 1), size = length(genes_for_ct), replace = TRUE,
-                    prob = c(1 - prop_pos_ct[i], prop_pos_ct[i]))
-    effect_sizes <- rgamma(length(genes_for_ct), shape = 4, rate = 4 / logfc_ct[i])
-    cell_type_effects[genes_for_ct, ct] <- signs * effect_sizes
-  }
+  colname <- paste0(ct, "_logfc")
+  gene_info[, (colname) := 0]  # Initialize to 0
+  gene_info[gene_id %in% genes_for_ct, (colname) := (signs * effect_sizes)[match(gene_id, genes_for_ct)]]
 }
+
+# if (n_ct_specific > 0) {
+#   is_ct_specific <- matrix(FALSE, nrow = n_genes, ncol = n_celltypes)
+#   colnames(is_ct_specific) <- cell_types
+#   
+#   n_common <- round(n_ct_specific * similarity)
+#   n_real_per_ct <- n_ct_specific - n_common
+#   
+#   common_genes <- sample(all_genes, n_common)
+#   
+#   available_genes <- setdiff(all_genes, common_genes)
+#   cell_type_genes_list <- vector("list", n_celltypes)
+#   for (i in seq_len(n_celltypes)) {
+#     selected <- sample(available_genes, n_real_per_ct)
+#     cell_type_genes_list[[i]] <- c(selected, common_genes)
+#     available_genes <- setdiff(available_genes, selected)
+#   }
+#   ##
+#   for (i in seq_len(n_celltypes)) {
+#     is_ct_specific[all_genes %in% cell_type_genes_list[[i]], i] <- TRUE
+#   }
+#   
+#   cell_type_effects <- matrix(0, nrow = n_genes, ncol = n_cell_types)
+#   colnames(cell_type_effects) <- cell_types
+#   rownames(cell_type_effects) <- all_genes
+#   
+#   for (i in seq_along(cell_types)) {
+#     ct <- cell_types[i]
+#     # genes_for_ct <- sample(ct_specific_genes, round(length(ct_specific_genes) / 2))
+#     genes_for_ct <- cell_type_genes_list[[i]]
+#     signs <- sample(c(-1, 1), size = length(genes_for_ct), replace = TRUE,
+#                     prob = c(1 - prop_pos_ct[i], prop_pos_ct[i]))
+#     effect_sizes <- rgamma(length(genes_for_ct), shape = 4, rate = 4 / logfc_ct[i])
+#     cell_type_effects[genes_for_ct, ct] <- signs * effect_sizes
+#   }
+# }
 
 # -----------------------------
 # group effects (gamma * random sign)
 # -----------------------------
 n_grp_specific <- round(n_genes * prop_group_specific)
-group_genes <- sample(all_genes, n_grp)
+# group_genes <- sample(all_genes, n_grp)
 # Number of common and true specific genes
 n_common_group <- round(group_effect_similarity * n_grp_specific)
 n_true_specific_group <- n_group_specific - n_common_group
@@ -323,14 +347,19 @@ if (is.null(prop_positive_group_effects) || length(prop_positive_group_effects) 
 
 for (i in seq_along(groups)) {
   grp <- groups[i]
+  group_genes <- group_genes_list[[i-1]]
   if (i == 1) {
     # group_effects[group_genes, grp] <- 0
     next
   }
-  signs <- sample(c(-1, 1), size = length(group_genes), replace = TRUE,
+  signs <- sample(c(-1, 1), size = n_grp_specific, replace = TRUE,
                   prob = c(1 - prop_positive_group_effects[i-1], prop_positive_group_effects[i-1]))
-  effect_sizes <- rgamma(length(group_genes), shape = 4, rate = 4 / average_logfc[i-1])
-  group_effects[group_genes_list[[i-1]], grp] <- signs * effect_sizes
+  effect_sizes <- rgamma(n_grp_specific, shape = 4, rate = 4 / average_logfc[i-1])
+  group_effects[group_genes, grp] <- signs * effect_sizes
+  
+  colname <- paste0(grp, "_logfc")
+  gene_info[, (colname) := 0]  # Initialize to 0
+  gene_info[gene_id %in% group_genes, (colname) := (signs * effect_sizes)[match(gene_id, group_genes)]]
 }
 
 # -----------------------------
@@ -343,21 +372,33 @@ if (include_cell_cont) {
   idx <- sample(seq_len(n_genes), round(n_genes * prop_cell_continuous))
   covariate_effects$cell_cont <- numeric(n_genes)
   covariate_effects$cell_cont[idx] <- rnorm(length(idx), 0, 0.3)
+  colname <- "cell_level_continuous_covariate_association"
+  gene_info[, (colname) := FALSE]
+  gene_info[idx, (colname) := TRUE]
 }
 if (include_cell_disc) {
   idx <- sample(seq_len(n_genes), round(n_genes * prop_cell_discrete))
   covariate_effects$cell_disc <- numeric(n_genes)
   covariate_effects$cell_disc[idx] <- rnorm(length(idx), 0, 0.3)
+  colname <- "cell_level_discrete_covariate_association"
+  gene_info[, (colname) := FALSE]
+  gene_info[idx, (colname) := TRUE]
 }
 if (include_sample_cont) {
   idx <- sample(seq_len(n_genes), round(n_genes * prop_sample_continuous))
   covariate_effects$sample_cont <- numeric(n_genes)
   covariate_effects$sample_cont[idx] <- rnorm(length(idx), 0, 0.3)
+  colname <- "sample_level_continuous_covariate_association"
+  gene_info[, (colname) := FALSE]
+  gene_info[idx, (colname) := TRUE]
 }
 if (include_sample_disc) {
   idx <- sample(seq_len(n_genes), round(n_genes * prop_sample_discrete))
   covariate_effects$sample_disc <- numeric(n_genes)
   covariate_effects$sample_disc[idx] <- rnorm(length(idx), 0, 0.3)
+  colname <- "sample_level_discrete_covariate_association"
+  gene_info[, (colname) := FALSE]
+  gene_info[idx, (colname) := TRUE]
 }
 
 
