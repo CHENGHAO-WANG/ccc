@@ -66,38 +66,45 @@
 #' @import progressr
 #' 
 #' @examples
+#' # Run with example data
+#' data(data.sim, package = "ccc")
+#' data(lr.sim, package = "ccc")
+#' 
+#' expression_matrix <- log_normalize(data.sim$counts)
+#' metadata <- data.sim$metadata
+#' a <- ccc_diff(expression_matrix = expression_matrix, metadata = metadata,
+#'    id_col = "sample", lr = lr.sim, sender = "CT1", receiver = c("CT2", "CT3"),
+#'    contrast = c(grp2 = 1, grp1 = -1), lmm_re = TRUE, logmm_re = TRUE)
+#' head(a$summary)
+#' head(a$test)
+#' 
 #' \dontrun{
-#'   # Not run
-#'   # Data not included; please refer to the vignette.
-#'   a <- ccc_diff(expression_matrix = expression_matrix, metadata = metadata,
-#'    group_col = "condition", id_col = "sample", lr = interaction_df,
-#'    contrast = c(A = 1, B = -1), lmm_re = TRUE, logmm_re = FALSE)
-#'   
-#'   # Not run
-#'   library(future)
-#'   oplan <- plan(multisession, workers = 4L) # run in parallel
-#'   a <- ccc_diff(expression_matrix = expression_matrix, metadata = metadata,
-#'    group_col = "condition", id_col = "sample", lr = interaction_df,
-#'    contrast = c(A = 1, B = -1), lmm_re = TRUE, logmm_re = FALSE)
-#'   plan(oplan)
+#' # Run in parallel
+#' library(future)
+#' oplan <- plan(multisession, workers = 4L)
+#' a <- ccc_diff(expression_matrix = expression_matrix, metadata = metadata,
+#'    id_col = "sample", lr = lr.sim, sender = "CT1", receiver = c("CT2", "CT3"),
+#'    contrast = c(grp2 = 1, grp1 = -1), lmm_re = TRUE, logmm_re = TRUE)
+#' plan(oplan)
+#' head(a$summary)
+#' head(a$test)
 #' }
 #'   
 #' @export
 
 ccc_diff <- function(expression_matrix, metadata, contrast,
-                         cell_id_col = "cell_id", cell_type_col = "cell_type", 
-                         group_col = "group", covar_col = NULL, cdr = TRUE,
-                         id_col = "id", lmm_re = TRUE, logmm_re = TRUE,
-                         sender = NULL, receiver = NULL,
-                         lr = "omnipathr", multi_sub = "minimum",
-                         sandwich = FALSE, verbose = TRUE, min_cell = 10,
-                         min_pct = 0.01, large_n = 2, min_total_pct = 0,
-                         threshold = 0, sep_detection = TRUE, sep_prop = 0, sep_n = 0,
-                         padj_method = "BH", cell_type_padj = TRUE,
-                         control_logm = list(),
-                         control_lmm = lme4::lmerControl() , control_logmm = list(),
-                         chunk_size = 10
-) {
+                     cell_id_col = "cell_id", cell_type_col = "cell_type", 
+                     group_col = "group", covar_col = NULL, cdr = TRUE,
+                     id_col = "id", lmm_re = TRUE, logmm_re = TRUE,
+                     sender = NULL, receiver = NULL,
+                     lr = "omnipathr", multi_sub = "minimum",
+                     sandwich = FALSE, verbose = TRUE, min_cell = 10,
+                     min_pct = 0.01, large_n = 2, min_total_pct = 0,
+                     threshold = 0, sep_detection = TRUE, sep_prop = 0, sep_n = 0,
+                     padj_method = "BH", cell_type_padj = TRUE,
+                     control_logm = list(),
+                     control_lmm = lme4::lmerControl() , control_logmm = list(),
+                     chunk_size = 10) {
   old_nthreads <- getDTthreads()
   on.exit(setDTthreads(old_nthreads), add = TRUE)
   
@@ -110,7 +117,7 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
         handlers('cli')
         message(
           "Info: No global progress bars were found; the cli handler has been enabled. ",
-          "See `vignette('ccc-intro')` for how to customize the progress bar settings."
+          "See `vignette('progressr-intro')` for how to customize the progress bar settings."
         )
       } 
     }

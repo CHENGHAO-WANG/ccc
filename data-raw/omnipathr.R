@@ -1,4 +1,3 @@
-## code to prepare `omnipathr` dataset goes here
 
 intercell_network <- OmnipathR::intercell_network(ligand_receptor = TRUE, high_confidence = TRUE, simplify = TRUE)
 

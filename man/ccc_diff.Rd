@@ -130,20 +130,28 @@ For each ligand/receptor gene, if the model fitting fails or produce warnings or
 Parallelization is supported via \pkg{future}. Progress bars are customized using \pkg{progressr}.
 }
 \examples{
+# Run with example data
+data(data.sim, package = "ccc")
+data(lr.sim, package = "ccc")
+
+expression_matrix <- log_normalize(data.sim$counts)
+metadata <- data.sim$metadata
+a <- ccc_diff(expression_matrix = expression_matrix, metadata = metadata,
+   id_col = "sample", lr = lr.sim, sender = "CT1", receiver = c("CT2", "CT3"),
+   contrast = c(grp2 = 1, grp1 = -1), lmm_re = TRUE, logmm_re = TRUE)
+head(a$summary)
+head(a$test)
+
 \dontrun{
-  # Not run
-  # Data not included; please refer to the vignette.
-  a <- ccc_diff(expression_matrix = expression_matrix, metadata = metadata,
-   group_col = "condition", id_col = "sample", lr = interaction_df,
-   contrast = c(A = 1, B = -1), lmm_re = TRUE, logmm_re = FALSE)
-  
-  # Not run
-  library(future)
-  oplan <- plan(multisession, workers = 4L) # run in parallel
-  a <- ccc_diff(expression_matrix = expression_matrix, metadata = metadata,
-   group_col = "condition", id_col = "sample", lr = interaction_df,
-   contrast = c(A = 1, B = -1), lmm_re = TRUE, logmm_re = FALSE)
-  plan(oplan)
+# Run in parallel
+library(future)
+oplan <- plan(multisession, workers = 4L)
+a <- ccc_diff(expression_matrix = expression_matrix, metadata = metadata,
+   id_col = "sample", lr = lr.sim, sender = "CT1", receiver = c("CT2", "CT3"),
+   contrast = c(grp2 = 1, grp1 = -1), lmm_re = TRUE, logmm_re = TRUE)
+plan(oplan)
+head(a$summary)
+head(a$test)
 }
   
 }

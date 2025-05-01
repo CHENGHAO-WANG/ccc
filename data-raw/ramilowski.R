@@ -1,4 +1,3 @@
-## code to prepare `ramilowski` dataset goes here
 
 library(readxl)
 library(httr)

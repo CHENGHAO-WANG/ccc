@@ -1,57 +1,5 @@
 
 
-
-
-#' Preprocess a data.table: center specified columns (numerical and converted categorical) in place.
-#'
-#' @param dt A data.table (will be modified directly).
-#' @param covar A vector of column names to be centered.
-#' @return A character vector containing the names of the columns that were centered.
-#'
-#' 
-#' dt <- data.table(
-#'   A = factor(c("a", "b", "a")),
-#'   B = c(1, 2, 3),
-#'   C = c("x", "y", "z"),
-#'   D = 4:7,
-#'   E = 8:11
-#' )
-#' covar_cols <- c("A", "B", "E")
-#' centered_cols <- preprocess_dt_center_covar_inplace(dt, covar_cols)
-#' print(centered_cols)
-#' print(dt) # The original 'dt' is now modified
-# center_covar<- function(dt, covar) {
-#   # Ensure dt is a data.table
-#   # setDT(dt)
-#   
-#   # covar_exists <- covar %in% names(dt)
-#   # if (!all(covar_exists)) {
-#   #   stop(paste0("The following columns specified in covar do not exist in the data.table: ", paste(covar[!covar_exists], collapse = ", ")))
-#   # }
-#   
-#   categorical_covar <- covar[sapply(dt[, covar, with = FALSE], function(col) is.factor(col) || is.character(col))]
-#   centered_column_names <- character(0) # Initialize an empty vector to store centered column names
-#   
-#   for (col_name in categorical_covar) {
-#     col <- dt[[col_name]]
-#     levels_col <- unique(col)
-#     for (level in levels_col) {
-#       new_col_name <- paste0(col_name, "_", level)
-#       dt[, (new_col_name) := as.integer(col == level)]
-#       centered_column_names <- c(centered_column_names, new_col_name) # Add new column name
-#     }
-#     dt[, (col_name) := NULL]
-#     covar <- c(covar[covar != col_name], names(dt)[startsWith(names(dt), paste0(col_name, "_"))])
-#   }
-#   
-#   for (col_name in covar) {
-#     dt[, (col_name) := scale(dt[[col_name]], center = TRUE, scale = FALSE)]
-#     centered_column_names <- c(centered_column_names, col_name) # Add centered column name
-#   }
-#   
-#   return(unique(centered_column_names)) # Return the unique names of centered columns
-# }
-
 center_covar <- function(dt, covar) {
   # if (!is.data.table(dt)) stop("Input 'dt' must be a data.table.")
   
