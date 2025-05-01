@@ -7,7 +7,7 @@
 \format{
 \subsection{\code{ramilowski}}{
 
-a data frame with 1894 rows and 2 columns: \code{ligand} and \code{receptor}.
+A data frame with 1894 rows and 2 columns: \code{ligand} and \code{receptor}.
 }
 }
 \source{

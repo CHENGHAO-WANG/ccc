@@ -69,14 +69,14 @@
 #' \dontrun{
 #'   # Not run
 #'   # Data not included; please refer to the vignette.
-#'   a <- ccc.diff(expression_matrix = expression_matrix, metadata = metadata,
+#'   a <- ccc_diff(expression_matrix = expression_matrix, metadata = metadata,
 #'    group_col = "condition", id_col = "sample", lr = interaction_df,
 #'    contrast = c(A = 1, B = -1), lmm_re = TRUE, logmm_re = FALSE)
 #'   
 #'   # Not run
 #'   library(future)
 #'   oplan <- plan(multisession, workers = 4L) # run in parallel
-#'   a <- ccc.diff(expression_matrix = expression_matrix, metadata = metadata,
+#'   a <- ccc_diff(expression_matrix = expression_matrix, metadata = metadata,
 #'    group_col = "condition", id_col = "sample", lr = interaction_df,
 #'    contrast = c(A = 1, B = -1), lmm_re = TRUE, logmm_re = FALSE)
 #'   plan(oplan)
@@ -84,7 +84,7 @@
 #'   
 #' @export
 
-ccc.diff <- function(expression_matrix, metadata, contrast,
+ccc_diff <- function(expression_matrix, metadata, contrast,
                          cell_id_col = "cell_id", cell_type_col = "cell_type", 
                          group_col = "group", covar_col = NULL, cdr = TRUE,
                          id_col = "id", lmm_re = TRUE, logmm_re = TRUE,

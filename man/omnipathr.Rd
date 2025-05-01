@@ -7,11 +7,11 @@
 \format{
 \subsection{\code{omnipathr}}{
 
-a data frame with 1946 rows and 2 columns: \code{ligand} and \code{receptor}.
+A data frame with 1946 rows and 2 columns: \code{ligand} and \code{receptor}.
 }
 }
 \source{
-the dataset was obtained using the \pkg{OmnipathR} package (version 3.14.0).
+The dataset was obtained using the \pkg{OmnipathR} package (version 3.14.0).
 The package is available on Bioconductor: \url{https://www.bioconductor.org/packages/release/bioc/html/OmnipathR.html}.
 }
 \usage{

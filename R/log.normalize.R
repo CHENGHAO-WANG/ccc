@@ -9,12 +9,12 @@
 #' @examples
 #' set.seed(123)
 #' raw <- matrix(rnbinom(100, mu = 1.5, size = 2), nrow = 20)
-#' normalized <- log.normalize(raw)
+#' normalized <- log_normalize(raw)
 #' normalized
 #' 
 #' @export
 
-# log.normalize <- function(count_matrix, MARGIN = 2L, scale_factor = 10000, base = exp(1)) {
+# log_normalize <- function(count_matrix, MARGIN = 2L, scale_factor = 10000, base = exp(1)) {
 #   
 #   lib_size <- switch(as.character(MARGIN),
 #                      "1" = rowSums(count_matrix),
@@ -23,7 +23,7 @@
 #   expression_matrix <- logb(sweep(count_matrix, MARGIN = MARGIN, STATS = lib_size, FUN = "/") * scale_factor + 1, base = base)
 #   return(expression_matrix)
 # }
-log.normalize <- function(count_matrix, scale_factor = 10000, base = exp(1)) {
+log_normalize <- function(count_matrix, scale_factor = 10000, base = exp(1)) {
   
   lib_size <- Matrix::colSums(count_matrix)
   expression_matrix <- logb(sweep(count_matrix, MARGIN = 2L, STATS = lib_size, FUN = "/") * scale_factor + 1, base = base)
