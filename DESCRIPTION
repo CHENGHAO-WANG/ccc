@@ -12,10 +12,10 @@ Encoding: UTF-8
 LazyData: true
 Imports: lme4, 
          GLMMadaptive,
+         data.table,
          assertthat, 
          sandwich, 
          clubSandwich, 
-         future, 
          future.apply, 
          progressr, 
          Matrix

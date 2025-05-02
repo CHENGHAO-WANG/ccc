@@ -56,7 +56,7 @@ sim_count(
 
 \item{grp_specific_prop}{numeric specifies the proportions of differentially expressed (DE) genes between each non-reference group and the reference group.}
 
-\item{grp_similarity}{numeric in \link{0, 1} specifies the overlap across the DE genes in each non-reference group.}
+\item{grp_similarity}{numeric in \eqn{[0, 1]} specifies the overlap across the DE genes in each non-reference group.}
 
 \item{avg_logfc}{a vector of length \code{length(sample_group) - 1}. Specifies the average log fold change for each non-reference group compared to the reference group.}
 

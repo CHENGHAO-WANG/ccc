@@ -14,6 +14,8 @@
 #' @param id_col a character string specifying the name of the column in `metadata` that contains individual-level (sample-level) ID's. Used for random effect modeling. Must be provided if `lmm_re == TRUE` or `logmm_re == TRUE`; otherwise, this can be omitted. Defaults to `"id"`.
 #' @param lmm_re logical scalar. Should a random effect be included in the linear component of the hurdle model? If `TRUE` (the default), fit a linear mixed-effects model with a random intercept based on `id_col` for each ligand/receptor gene; if `FALSE`, fit a linear model without random effects.
 #' @param logmm_re logical scalar. Should a random effect be included in the logistic component of the hurdle model? If `TRUE` (the default), fit a logistic mixed-effects model with a random intercept based on `id_col` for each ligand/receptor gene; if `FALSE`, fit a logistic model without random effects.
+#' @param sender a character string or a character vector specifying the cell types as sender (expressing ligands in cell-cell communication). Defaults to all cell types.
+#' @param receiver a character string or a character vector specifying the cell types as receiver (expressing receptors in cell-cell communication). Defaults to all cell types.
 #' @param lr specifies the ligand-receptor database to use. Can be `"omnipathr"` (the default), `"ramilowski"`, or a user-supplied data frame. If `"omnipathr"` or `"ramilowski"` is provided, the corresponding built-in dataset is used. If a data frame is provided, it must contain exactly two columns named `"ligand"` and `"receptor"`, with gene symbols as entries. For multi-subunit ligands/receptors, the gene symbols of all subunits must be joined by `_`. (e.g., `"CLCF1_CRLF1"` for a ligand composed of CLCF1 and CRLF1)
 #' @param multi_sub a character string specifying how to handle multi-subunit ligands/receptors.
 #'  \itemize{
@@ -61,11 +63,14 @@
 #' 
 #' @import data.table
 #' @importFrom future.apply future_lapply
-#' @importFrom lme4 lmer
-#' @importFrom GLMMadaptive mixed_model
+#' @importFrom lme4 lmer fixef
+#' @importFrom GLMMadaptive mixed_model marginal_coefs
 #' @import progressr
+#' @importFrom utils data
+#' @importFrom stats as.formula binomial dlogis glm lm p.adjust pchisq plogis pnorm qnorm rgamma rnbinom rnorm runif vcov coef
 #' 
 #' @examples
+#' \dontrun{
 #' # Run with example data
 #' data(data.sim, package = "ccc")
 #' data(lr.sim, package = "ccc")
@@ -78,7 +83,6 @@
 #' head(a$summary)
 #' head(a$test)
 #' 
-#' \dontrun{
 #' # Run in parallel
 #' library(future)
 #' oplan <- plan(multisession, workers = 4L)
@@ -237,7 +241,7 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
     message("'receiver' is not specified. All cell types will be considered as potential receivers in the analysis.")
   }
   
-  padj_method <- match.arg(padj_method, p.adjust.methods)
+  padj_method <- match.arg(padj_method, stats::p.adjust.methods)
   
   metadata <- as.data.table(metadata)
   metadata <- rename_metadata(metadata = metadata,
@@ -573,7 +577,7 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
   }
   
   setDTthreads(threads = 1)
-  results_obj <- future_lapply(i_s, FUN = run_analysis)
+  results_obj <- future_lapply(i_s, FUN = run_analysis, future.seed = TRUE)
   setDTthreads(threads = old_nthreads)
   
   list.descriptive_stats <- lapply(results_obj, \(x) x$descriptive_stats)

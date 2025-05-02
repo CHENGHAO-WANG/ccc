@@ -1,4 +1,7 @@
 
+utils::globalVariables(c('.', 'N', 'V1', 'cdr', 'cell_id', 'cell_type', 'group', 'id', 'y', 'z',
+                         'omnipathr', 'ramilowski', 'dispersion',  'gene_id', 'within_sample_correlation',
+                         'cell_continuous', 'cell_discrete', 'sample_continuous', 'sample_discrete'))
 
 center_covar <- function(dt, covar) {
   # if (!is.data.table(dt)) stop("Input 'dt' must be a data.table.")
@@ -99,8 +102,8 @@ prep_lr <- function(lr) {
   
   lr_table <- switch(EXPR = lr_name,
                      "omnipathr" = {
-                       data("ramilowski", envir = environment())
-                       ramilowski
+                       data("omnipathr", envir = environment())
+                       omnipathr
                      },
                      "ramilowski" = {
                        data("ramilowski", envir = environment())

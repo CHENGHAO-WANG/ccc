@@ -11,7 +11,7 @@
 #' @param re_prop numeric specifies the proportion of genes with sample-level random intercepts.
 #' @param re_sigma_shape,re_sigma_rate Simulate gene-wise standard deviation for sample-level random intercepts from a inverse Gamma distribution with provided shape and rate. 
 #' @param grp_specific_prop numeric specifies the proportions of differentially expressed (DE) genes between each non-reference group and the reference group.
-#' @param grp_similarity numeric in [0, 1] specifies the overlap across the DE genes in each non-reference group.
+#' @param grp_similarity numeric in \eqn{[0, 1]} specifies the overlap across the DE genes in each non-reference group.
 #' @param avg_logfc a vector of length `length(sample_group) - 1`. Specifies the average log fold change for each non-reference group compared to the reference group.
 #' @param up_grp_prob a vector of length `length(sample_group) - 1`. Specifies the probabilities of up-regulation in each non-reference group.
 #' @param ct_specific_prop numeric specifies the proportions of cell-type-specific genes in each cell type. 
