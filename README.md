@@ -5,7 +5,7 @@
 To install `ccc` from GitHub, use the following command:
 
 ```r
-devtools::install_github("your-username/ccc")
+devtools::install_github("CHENGHAO-WANG/ccc")
 ```
 
 ## Examples
