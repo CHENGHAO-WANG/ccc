@@ -10,7 +10,7 @@ devtools::install_github("CHENGHAO-WANG/ccc")
 
 ## Examples
 
-```
+```r
 ## Run with example simulated data
 data(data.sim, package = "ccc")
 data(lr.sim, package = "ccc")
