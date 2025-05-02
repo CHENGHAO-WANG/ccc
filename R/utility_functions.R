@@ -5,20 +5,13 @@ utils::globalVariables(c(
 ))
 
 center_covar <- function(dt, covar) {
-  # if (!is.data.table(dt)) stop("Input 'dt' must be a data.table.")
-
-  # missing_covar <- covar[!covar %in% names(dt)]
-  # if (length(missing_covar) > 0) {
-  #   stop("The following columns do not exist in 'dt': ", paste(missing_covar, collapse = ", "))
-  # }
-
   centered_column_names <- character(0)
 
   for (col_name in covar) {
     col <- dt[[col_name]]
 
     if (is.factor(col) || is.character(col)) {
-      levels_col <- sort(unique(col)) # you could use levels(col) if it's a factor and you want to preserve order
+      levels_col <- sort(unique(col))
       ref_level <- levels_col[1] # drop the first level
       dummy_levels <- levels_col[levels_col != ref_level]
 
@@ -41,9 +34,6 @@ center_covar <- function(dt, covar) {
 
 
 detect_re_separation <- function(dt, z_col, id_col, num_ids = NULL, sep_prop = 0, sep_n = 0) {
-  # Ensure dt is a data.table
-  # setDT(dt)
-
   # Count the number of distinct id's
   if (is.null(num_ids)) {
     num_ids <- dt[, uniqueN(get(id_col))]
@@ -60,7 +50,6 @@ detect_re_separation <- function(dt, z_col, id_col, num_ids = NULL, sep_prop = 0
 
 
 detect_all_zeros <- function(dt, id_col, id) {
-  # setDT(dt)
   unique_id_col <- unique(dt[[id_col]]) # Get unique values from id_col
   !all(id %in% unique_id_col)
 }
@@ -75,25 +64,12 @@ compute_group_stats <- function(dt, y_col = "y", group_col = "group", z_col = "z
 
   setnames(stats_dt, "get", group_col)
 
-  # # Ensure all groups from group_names are included
-  # all_groups_dt <- data.table(group = group_names)
-  # result <- merge(all_groups_dt, stats_dt, by = group_col, all.x = TRUE)
-  #
-  # # Replace NAs with 0 for missing groups
-  # for (col in c("mean", "positive_mean", "expression_rate")) {
-  #   result[is.na(get(col)), (col) := 0]
-  # }
-  #
-  # return(result)
   stats_cols <- setdiff(names(stats_dt), group_col)
   setnames(stats_dt, stats_cols, paste0(prefix, stats_cols))
   stats_dt
 }
 
 
-
-#'
-#'
 prep_lr <- function(lr) {
   if (is.data.frame(lr)) {
     stopifnot(colnames(lr) == c("ligand", "receptor"))
@@ -120,8 +96,6 @@ prep_lr <- function(lr) {
 
 
 rename_metadata <- function(metadata, cell_id_col, id_col, group_col, cell_type_col) {
-  # metadata0 <- as.data.table(metadata)
-  # message("Current column names: ", paste(names(metadata), collapse = ", "))
   if (is.null(id_col)) {
     setnames(metadata, old = c(cell_id_col, group_col, cell_type_col), new = c("cell_id", "group", "cell_type"))
     metadata[, id := group]
@@ -130,8 +104,6 @@ rename_metadata <- function(metadata, cell_id_col, id_col, group_col, cell_type_
   }
   return(metadata)
 }
-
-
 
 
 filter_cell_type <- function(metadata, sender, receiver, min_cell, contrast) {
@@ -144,30 +116,15 @@ filter_cell_type <- function(metadata, sender, receiver, min_cell, contrast) {
 
   metadata <- metadata[group %in% colnames(contrast)]
 
-  # # Check if any rows remain after contrast filtering
-  # if (nrow(metadata) == 0) {
-  #   stop("No rows remain after applying contrast filtering.")
-  # }
-
   # Find rows where cell_type appears in either sender OR receiver
   valid_cell_types <- union(sender, receiver)
   metadata_subset <- metadata[cell_type %in% valid_cell_types]
-
-  # # Check if any rows remain
-  # if (nrow(metadata_subset) == 0) {
-  #   stop("No rows remain after filtering by sender or receiver cell types.")
-  # }
 
   # Count occurrences of each id-cell_type combination
   counts <- metadata_subset[, .N, by = .(id, cell_type)]
 
   # Keep only cell_type where count >= min_cell for each id
   metadata_subset <- metadata_subset[counts[N >= min_cell], on = .(id, cell_type)]
-
-  # # Check again if any rows remain after applying min_cell filter
-  # if (nrow(metadata_subset) == 0) {
-  #   stop("No rows remain after applying min_cell filter.")
-  # }
 
   # Ensure each id has the same unique set of cell_type values
   valid_cell_types_by_id <- metadata_subset[, .(unique_cell_types = list(unique(cell_type))), by = id]
@@ -215,17 +172,8 @@ filter_cell_type <- function(metadata, sender, receiver, min_cell, contrast) {
 
 
 compute_cdr <- function(expression_matrix, metadata_subset, threshold) {
-  # # Ensure rownames and colnames are correctly set
-  # if (is.null(rownames(expression_matrix)) || is.null(colnames(expression_matrix))) {
-  #   stop("expression_matrix must have rownames (genes) and colnames (cell ids).")
-  # }
-
   # Subset the expression matrix to only include the cell ids in metadata_subset
   common_cells <- intersect(colnames(expression_matrix), metadata_subset$cell_id)
-
-  # if (length(common_cells) == 0) {
-  #   stop("No overlapping cell ids found between 'expression_matrix' and 'metadata' given 'sender' and 'receiver'.")
-  # }
 
   expression_subset <- expression_matrix[, common_cells, drop = FALSE]
 
@@ -316,11 +264,6 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
     test.logistic <- FALSE
   }
 
-  # coef_l_lmm <- fixef(fit.l.lmm)
-  # coef_l_logmm <- fixef(fit.l.logmm)
-  # coef_r_lmm <- fixef(fit.r.lmm)
-  # coef_r_logmm <- fixef(fit.r.logmm)
-
   if (isTRUE(test.linear)) {
     coef_l_lm <- coef_l_lm[names(coef_l_lm) %in% group_names]
     coef_r_lm <- coef_r_lm[names(coef_r_lm) %in% group_names]
@@ -336,24 +279,6 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
   if (test.linear || test.logistic) {
     dt.test[, c("sender", "receiver", "ligand", "receptor") := list(sender, receiver, ligand, receptor)]
   }
-
-  # Filter coefficients to only include group names
-  # coef_l_lm <- coef_l_lm[names(coef_l_lm) %in% group_names]
-  # coef_l_logm <- coef_l_logm[names(coef_l_logm) %in% group_names]
-  # coef_r_lm <- coef_r_lm[names(coef_r_lm) %in% group_names]
-  # coef_r_logm <- coef_r_logm[names(coef_r_logm) %in% group_names]
-
-  # Ensure coefficients are named vectors
-  # if (is.null(names(coef_l_lmm))) names(coef_l_lmm) <- names(fixef(fit.l.lmm)[names(fixef(fit.l.lmm)) %in% group_names])
-  # if (is.null(names(coef_l_logmm))) names(coef_l_logmm) <- names(fixef(fit.l.logmm)[names(fixef(fit.l.logmm)) %in% group_names])
-  # if (is.null(names(coef_r_lmm))) names(coef_r_lmm) <- names(fixef(fit.r.lmm)[names(fixef(fit.r.lmm)) %in% group_names])
-  # if (is.null(names(coef_r_logmm))) names(coef_r_logmm) <- names(fixef(fit.r.logmm)[names(fixef(fit.r.logmm)) %in% group_names])
-
-  # Reorder coefficients to match group_names order
-  # coef_l_lm <- coef_l_lm[group_names]
-  # coef_l_logm <- coef_l_logm[group_names]
-  # coef_r_lm <- coef_r_lm[group_names]
-  # coef_r_logm <- coef_r_logm[group_names]
 
   if (isTRUE(test.linear)) {
     effect_size_linear <- contrast %*% (coef_l_lm * coef_r_lm)
@@ -446,21 +371,6 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
       dt.test[, effect_size_hurdle := NULL]
     }
   }
-
-
-
-
-  # test_statistic <- tryCatch({
-  #   solve(cov_weighted_sum) %*% mean_weighted_sum
-  # }, error = function(e) {
-  #   MASS::ginv(cov_weighted_sum) %*% mean_weighted_sum
-  # })
-
-
-
-  # return(list(mean_weighted_sum = mean_weighted_sum,
-  #             test_statistic = test_statistic,
-  #             p_value = p_value))
 
   dt.test
 }

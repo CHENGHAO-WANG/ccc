@@ -71,12 +71,13 @@
 #'
 #' @examples
 #' \dontrun{
-#' # Run with example data
+#' ## Run with example data
 #' data(data.sim, package = "ccc")
 #' data(lr.sim, package = "ccc")
-#'
 #' expression_matrix <- log_normalize(data.sim$counts)
 #' metadata <- data.sim$metadata
+#' 
+#' # Run sequentially
 #' a <- ccc_diff(
 #'   expression_matrix = expression_matrix, metadata = metadata,
 #'   id_col = "sample", lr = lr.sim, sender = "CT1", receiver = c("CT2", "CT3"),
@@ -129,21 +130,6 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
         )
       }
     }
-    # if (!progressr::handlers(global = NA) && interactive()) {
-    #   # If no progressr bar settings are configured, then set cli as the default.
-    #   progressr::handlers(global = TRUE)
-    #   ohandlers <- progressr::handlers('cli')
-    #   # if (length(ohandlers) == 0) {
-    #   #   on.exit(progressr::handlers())
-    #   # }
-    #   on.exit(progressr::handlers(global = FALSE), add = TRUE)
-    #   on.exit(progressr::handlers(ohandlers), add = TRUE)
-    #
-    #   message(
-    #     "Info: No global progress bars were found; the cli handler has been enabled. ",
-    #     "See `vignette('ccc-intro')` for how to customize the progress bar settings."
-    #   )
-    # }
   }
 
   assertthat::assert_that(assertthat::is.flag(cdr))
@@ -182,9 +168,7 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
   if (any(is.na(metadata))) {
     stop("Missing values not allowed in metadata, please remove NA values.")
   }
-  # if(any(is.na(covar_col))) {
-  #   stop("Missing values not allowed in covar_col, please remove NA values.")
-  # }
+
   multi_sub <- match.arg(multi_sub, choices = c("minimum", "arithmetic_mean", "geometric_mean", "min_avg_gene", "min_rate_gene"))
 
   err_msg <- " in 'covar_col'. Please use a different argument or rename it."
@@ -310,10 +294,8 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
   # Create all possible combinations of sender and receiver
   sender_receiver_combinations <- expand.grid(sender = sender, receiver = receiver)
 
-  # Merge with lr_table to get all possible combinations
   pairs4analysis <- base::merge(sender_receiver_combinations, lr_table, by = NULL)
 
-  # Convert to data.table
   setDT(pairs4analysis)
   npairs <- nrow(pairs4analysis)
   unique_ids <- unique(metadata_subset[, id])
@@ -383,11 +365,6 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
       data_sender_ligand_1 <- data_sender_ligand[z == 1]
       data_receiver_receptor_1 <- data_receiver_receptor[z == 1]
 
-      # results.j[ligand.mean := mean(data_sender_ligand$y)]
-      # positive_expression <- data_sender_ligand_1$y
-      # results.j[ligand.positive_mean := ifelse(length(data_sender_ligand_1$y) > 0, mean(positive_expression))]
-      # results.j[receptor.mean := mean(data_receiver_receptor$y)]
-
       # descriptive statistics summary
       dt.summary.ligand <- compute_group_stats(dt = data_sender_ligand, prefix = "ligand.")
       dt.summary.receptor <- compute_group_stats(dt = data_receiver_receptor, prefix = "receptor.")
@@ -422,68 +399,6 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
         random_formula <- as.formula("~ 1 | id")
         formula_logistic <- list("fixed" = fixed_formula, "random" = random_formula)
       }
-
-      # Fit models
-      # fit_linear <- function(data, formula, name) {
-      #   warnings. <- list()
-      #   messages. <- list()
-      #   fit <- tryCatch(
-      #     withCallingHandlers({
-      #     cond <- detect_all_zeros(dt = data, id_col = "id", id = unique_ids)
-      #     if (cond) {
-      #       stop("Too few cells expressing the ligand/receptor gene for fitting a linear model.")
-      #     } else {
-      #       if (isTRUE(lmm_re)) {
-      #         lmer(formula, data = data, control = control_lmm)
-      #       } else {
-      #         lm(formula, data = data)
-      #       }
-      #     }
-      #   }, warning = function(w) {
-      #     warnings.[[length(warnings.) + 1L]] <<- w$message
-      #     invokeRestart("muffleWarning")
-      #   }, message = function(m) {
-      #     messages.[[length(messages.) + 1L]] <<- m$message
-      #     invokeRestart("muffleMessage")
-      #   }), error = function(e) {
-      #     error_messages[[name]] <<- e$message
-      #     return(NULL)
-      #   })
-      #   if (length(warnings.) > 0) {
-      #     warning_messages[[name]] <<- warnings.
-      #   }
-      #   if (length(messages.) > 0) {
-      #     the_messages[[name]] <<- messages.
-      #   }
-      #   fit
-      # }
-      #
-      # fit_logistic <- function(data, formula, name) {
-      #   warnings. <- list()
-      #   fit <- tryCatch(
-      #     withCallingHandlers({
-      #     cond <- isTRUE(sep_detection) && detect_re_separation(dt = data, z_col = "z", id_col = "id", num_ids = num_ids, sep_prop = sep_prop, sep_n = sep_n)
-      #     if (cond) {
-      #       stop("Complete or Quasi-complete separation detected.")
-      #     } else {
-      #       if (isTRUE(logmm_re)) {
-      #         mixed_model(fixed = formula$fixed, random = formula$random, family = binomial(), data = data, control = control_logmm)
-      #       } else {
-      #         glm(formula, family = binomial(), data = data, control = control_logm)
-      #       }
-      #     }
-      #   }, warning = function(w) {
-      #     warnings.[[length(warnings.) + 1L]] <<- w$message
-      #     invokeRestart("muffleWarning")
-      #   }), error = function(e) {
-      #     error_messages[[name]] <<- e$message
-      #     return(NULL)
-      #   })
-      #   if (length(warnings.) > 0) {
-      #     warning_messages[[name]] <<- warnings.
-      #   }
-      #   fit
-      # }
 
       fit_model <- function(part, data, formula, name) {
         stopifnot(part == "linear" || part == "logistic")
@@ -541,16 +456,11 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
 
       ##
       warning_messages <- the_messages <- error_messages <- list()
-      # fit.l.linear <- fit_linear(data = data_sender_ligand_1, formula = formula_linear, name = "ligand.linear")
-      # fit.r.linear <- fit_linear(data = data_receiver_receptor_1, formula = formula_linear, name = "receptor.linear")
-      # fit.l.logistic <- fit_logistic(data = data_sender_ligand, formula = formula_logistic, name = "ligand.logistic")
-      # fit.r.logistic <- fit_logistic(data = data_receiver_receptor, formula = formula_logistic, name = "receptor.logistic")
-
+      
       fit.l.linear <- fit_model(part = "linear", data = data_sender_ligand_1, formula = formula_linear, name = "ligand.linear")
       fit.r.linear <- fit_model(part = "linear", data = data_receiver_receptor_1, formula = formula_linear, name = "receptor.linear")
       fit.l.logistic <- fit_model(part = "logistic", data = data_sender_ligand, formula = formula_logistic, name = "ligand.logistic")
       fit.r.logistic <- fit_model(part = "logistic", data = data_receiver_receptor, formula = formula_logistic, name = "receptor.logistic")
-
 
       if (length(warning_messages) > 0) {
         results.warning[[paste(sender, receiver, ligand, receptor, sep = "-")]] <- warning_messages
@@ -562,16 +472,6 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
         results.error[[paste(sender, receiver, ligand, receptor, sep = "-")]] <- error_messages
       }
 
-      ## error message
-      # model_objects <- list(ligand.linear = fit.l.linear,
-      #                       ligand.logistic = fit.l.logistic,
-      #                       receptor.linear = fit.r.linear,
-      #                       receptor.logistic = fit.r.logistic)
-      # is_errors <- sapply(model_objects, is.character)
-      # error_messages <- model_objects[is_errors]
-      # if (length(error_messages) > 0) {
-      #   results.error[[paste(sender, receiver, ligand, receptor, sep = "-")]] <- error_messages
-      # }
       results.test[[length(results.test) + 1L]] <- ccc_test(
         fit.l.linear = fit.l.linear, fit.l.logistic = fit.l.logistic,
         fit.r.linear = fit.r.linear, fit.r.logistic = fit.r.logistic,
@@ -584,7 +484,6 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
     if (verbose) {
       p()
     }
-    # rbindlist(results.i, fill = TRUE)
     list(
       descriptive_stats = rbindlist(results.summary),
       test_results = rbindlist(results.test, fill = TRUE),
