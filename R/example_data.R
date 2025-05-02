@@ -1,7 +1,7 @@
 #' Example Dataset
-#' 
+#'
 #' Example scRNA-seq data from simulation.
-#' 
+#'
 #' @format ## `data.sim`
 #' A list with the following elements:
 #' \describe{
@@ -16,16 +16,16 @@
 #'   - `grp2_logfc`, `grp3_logfc`: log fold change comparing "grp2" and "grp3" to "grp1" group
 #'   }
 #' }
-#' 
+#'
 #' @source Created using [sim_count()].
 "data.sim"
 
 #' Example Ligand-Receptor Pairs
-#' 
+#'
 #' Example ligand-receptor pairs database from simulation. This is designed to be used in conjunction with [data.sim].
-#' 
+#'
 #' @format ## `lr.sim`
 #' A data frame with 20 rows and 2 columns: `ligand` and `receptor`.
-#' 
+#'
 #' @source Created using [sim_lr()].
 "lr.sim"
