@@ -306,13 +306,12 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
   i_s <- seq(1L, nrow(pairs4analysis), by = chunk_size)
   if (verbose) {
     p <- progressr::progressor(along = i_s)
+    message("Starting statistical analysis...")
   }
   
   run_analysis <- function(i) {
     chunk <- pairs4analysis[i:min(i + chunk_size - 1L, npairs), ]
-    if (verbose) {
-      p()
-    }
+
     
     results.summary <- results.test <- results.error <- results.warning <- results.message <- list()
     for (j in 1L:nrow(chunk)) {
@@ -560,7 +559,10 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
                                                             sandwich = sandwich,
                                                             sender = sender, receiver = receiver,
                                                             ligand = ligand, receptor = receptor)
-      
+
+    }
+    if (verbose) {
+      p()
     }
     #rbindlist(results.i, fill = TRUE)
     list(descriptive_stats = rbindlist(results.summary),

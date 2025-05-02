@@ -549,6 +549,8 @@ sim_lr <- function(seed = NULL, genes.l = paste0("G", 1:500), genes.r = paste0("
   stopifnot(dimer + trimer <= 1)
   genes.l <- as.character(genes.l)
   genes.r <- as.character(genes.r)
+  genes.l <- unique(genes.l)
+  genes.r <- unique(genes.r)
   
   make_complex <- function(genes, dimer, trimer) {
     used_genes <- character()  # Track genes that are part of complexes or are single
