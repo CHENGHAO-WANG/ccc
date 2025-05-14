@@ -209,6 +209,23 @@ compute_expression_value <- function(expr_values, multi_sub, threshold) {
   )
 }
 
+stouffer_combine_pvalues <- function(pvalues) {
+  # Convert p-values to z-scores
+  z_scores <- qnorm(pvalues, lower.tail = FALSE)
+  # Combine z-scores using Stouffer's method
+  combined_z <- sum(z_scores) / sqrt(length(z_scores))
+  # Convert back to p-value
+  pnorm(combined_z, lower.tail = FALSE)
+}
+
+fisher_combine_pvalues <- function(pvalues) {
+  # Fisher's method: -2 * sum(log(p))
+  chi_sq <- -2 * sum(log(pvalues))
+  # Degrees of freedom is 2 * number of p-values
+  df <- 2 * length(pvalues)
+  # Convert to p-value
+  pchisq(chi_sq, df = df, lower.tail = FALSE)
+}
 
 ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
                      contrast, lmm_re, logmm_re, sandwich,
@@ -364,8 +381,11 @@ ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
     pvalue_hurdle <- pchisq(test_stat_hurdle, df = nrow(contrast), lower.tail = FALSE)
     test_stat_2part <- test_stat_linear + test_stat_logistic
     pvalue_2part <- pchisq(test_stat_2part, df = nrow(contrast) * 2L, lower.tail = FALSE)
+    pvalue_stouffer <- stouffer_combine_pvalues(c(pvalue_linear, pvalue_logistic))
+    pvalue_fisher <- fisher_combine_pvalues(c(pvalue_linear, pvalue_logistic))
 
-    dt.test[, c("effect_size_hurdle", "pvalue_hurdle", "pvalue_2part") := list(list(effect_size_hurdle), pvalue_hurdle, pvalue_2part)]
+    dt.test[, c("effect_size_hurdle", "pvalue_hurdle", "pvalue_2part", "pvalue_stouffer", "pvalue_fisher") := 
+            list(list(effect_size_hurdle), pvalue_hurdle, pvalue_2part, pvalue_stouffer, pvalue_fisher)]
     if (nrow(contrast) > 1L) {
       dt.test[, paste0("effect_size_hurdle_", seq_len(nrow(contrast))) := transpose(effect_size_hurdle)]
       dt.test[, effect_size_hurdle := NULL]

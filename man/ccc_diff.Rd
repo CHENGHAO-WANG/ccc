@@ -126,6 +126,14 @@ Then perform Wald tests on the product of ligand expression levels in sender and
 This function perform differential cell-cell communication analysis. For each communication pair, a hurdle model is fitted to ligand expression data in sender and another hurdle model is fitted to receptor expression data in receiver.
 The delta method is applied to obtain appropriate standard errors for the product of ligand and receptor expression levels, using estimates from the fitted hurdle models. Then Wald tests are performed.
 
+When both linear and logistic components are fitted successfully, four different methods are used to combine their p-values:
+\itemize{
+\item{\code{'Hurdle'}}: A chi-square test statistic is computed for the combined hurdle model, with degrees of freedom equal to the number of contrast parameters.
+\item{\code{'2-part'}}: A chi-square test statistic is computed as the sum of the linear and logistic test statistics, with degrees of freedom equal to twice the number of contrast parameters.
+\item{\code{Stouffer's method}}: P-values from the linear and logistic components are converted to z-scores, summed up, and converted back to a p-value.
+\item{\code{Fisher's method}}: A chi-square test statistic is computed as -2 times the sum of the logarithms of the p-values from the linear and logistic components, with degrees of freedom equal to twice the number of p-values, which is 4 in this case.
+}
+
 Users can either specify the relevant column names of \code{metadata} using the arguments \code{cell_id_col}, \code{cell_type_col}, \code{group_col}, \code{covar_col} (can be omitted if no covariates are to be adjusted for), and \code{id_col}.
 To adjust for CDR, simply set \code{cdr = TRUE} (This is also the default setting); do not calculate and add CDR manually to \code{metadata}.
 
