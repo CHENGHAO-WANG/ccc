@@ -106,15 +106,16 @@ rename_metadata <- function(metadata, cell_id_col, id_col, group_col, cell_type_
 }
 
 
-filter_cell_type <- function(metadata, sender, receiver, min_cell, contrast) {
+filter_cell_type <- function(metadata, sender, receiver, min_cell) {
   if (is.null(sender)) {
     sender <- unique(metadata$cell_type)
   }
   if (is.null(receiver)) {
     receiver <- unique(metadata$cell_type)
   }
-
-  metadata <- metadata[group %in% colnames(contrast)]
+  
+  # To keep all group levels in model fittings
+  # metadata <- metadata[group %in% colnames(contrast)]
 
   # Find rows where cell_type appears in either sender OR receiver
   valid_cell_types <- union(sender, receiver)
@@ -227,172 +228,90 @@ fisher_combine_pvalues <- function(pvalues) {
   pchisq(chi_sq, df = df, lower.tail = FALSE)
 }
 
-ccc_test <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
-                     contrast, lmm_re, logmm_re, sandwich,
-                     sender, receiver, ligand, receptor) {
-  dt.test <- data.table()
-  group_names <- paste0("group", colnames(contrast))
+ccc_estimate <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
+                     unique_levels, lmm_re, logmm_re, sandwich,
+                     sender, receiver, ligand, receptor, var_to_test = c("group", "class")) {
+  dt.est <- data.table()
+  var_to_test <- var_to_test[1L]
+  var_names <- paste0(var_to_test, unique_levels)
+  
+  test.linear <- FALSE
+  test.logistic <- FALSE
   if (!is.null(fit.l.linear) && !is.null(fit.r.linear)) {
     if (isTRUE(lmm_re)) {
       coef_l_lm <- lme4::fixef(fit.l.linear)
       coef_r_lm <- lme4::fixef(fit.r.linear)
       if (isTRUE(sandwich)) {
-        vcov_l_lm_group <- clubSandwich::vcovCR(fit.l.linear, type = "CR2")[group_names, group_names]
-        vcov_r_lm_group <- clubSandwich::vcovCR(fit.r.linear, type = "CR2")[group_names, group_names]
+        vcov_l_lm <- clubSandwich::vcovCR(fit.l.linear, type = "CR2")[var_names, var_names]
+        vcov_r_lm <- clubSandwich::vcovCR(fit.r.linear, type = "CR2")[var_names, var_names]
       }
     } else {
       coef_l_lm <- stats::coef(fit.l.linear)
       coef_r_lm <- stats::coef(fit.r.linear)
       if (isTRUE(sandwich)) {
-        vcov_l_lm_group <- sandwich::vcovHC(fit.l.linear, type = "HC3")[group_names, group_names]
-        vcov_r_lm_group <- sandwich::vcovHC(fit.r.linear, type = "HC3")[group_names, group_names]
+        vcov_l_lm <- sandwich::vcovHC(fit.l.linear, type = "HC3")[var_names, var_names]
+        vcov_r_lm <- sandwich::vcovHC(fit.r.linear, type = "HC3")[var_names, var_names]
       }
     }
     if (isFALSE(sandwich)) {
-      vcov_l_lm_group <- vcov(fit.l.linear)[group_names, group_names]
-      vcov_r_lm_group <- vcov(fit.r.linear)[group_names, group_names]
+      vcov_l_lm <- vcov(fit.l.linear)[var_names, var_names]
+      vcov_r_lm <- vcov(fit.r.linear)[var_names, var_names]
     }
+    coef_l_lm <- coef_l_lm[var_names]
+    coef_r_lm <- coef_r_lm[var_names]
     test.linear <- TRUE
-  } else {
-    test.linear <- FALSE
   }
-
+  
   if (!is.null(fit.l.logistic) && !is.null(fit.r.logistic)) {
     if (isTRUE(logmm_re)) {
       m_l <- GLMMadaptive::marginal_coefs(fit.l.logistic, std_errors = TRUE, cores = 1L, sandwich = sandwich)
       m_r <- GLMMadaptive::marginal_coefs(fit.r.logistic, std_errors = TRUE, cores = 1L, sandwich = sandwich)
       coef_l_logm <- m_l$betas
       coef_r_logm <- m_l$betas
-      vcov_l_logm_group <- m_l$var_betas[group_names, group_names]
-      vcov_r_logm_group <- m_r$var_betas[group_names, group_names]
+      vcov_l_logm <- m_l$var_betas[var_names, var_names]
+      vcov_r_logm <- m_r$var_betas[var_names, var_names]
     } else {
       coef_l_logm <- stats::coef(fit.l.logistic)
       coef_r_logm <- stats::coef(fit.r.logistic)
       if (isTRUE(sandwich)) {
-        vcov_l_logm_group <- sandwich::vcovHC(fit.l.logistic, type = "HC3")[group_names, group_names]
-        vcov_r_logm_group <- sandwich::vcovHC(fit.r.logistic, type = "HC3")[group_names, group_names]
+        vcov_l_logm <- sandwich::vcovHC(fit.l.logistic, type = "HC3")[var_names, var_names]
+        vcov_r_logm <- sandwich::vcovHC(fit.r.logistic, type = "HC3")[var_names, var_names]
       } else {
-        vcov_l_logm_group <- vcov(fit.l.logistic)[group_names, group_names]
-        vcov_r_logm_group <- vcov(fit.r.logistic)[group_names, group_names]
+        vcov_l_logm <- vcov(fit.l.logistic)[var_names, var_names]
+        vcov_r_logm <- vcov(fit.r.logistic)[var_names, var_names]
       }
     }
+    coef_l_logm <- coef_l_logm[var_names]
+    coef_r_logm <- coef_r_logm[var_names]
     test.logistic <- TRUE
-  } else {
-    test.logistic <- FALSE
   }
 
-  if (isTRUE(test.linear)) {
-    coef_l_lm <- coef_l_lm[names(coef_l_lm) %in% group_names]
-    coef_r_lm <- coef_r_lm[names(coef_r_lm) %in% group_names]
-    coef_l_lm <- coef_l_lm[group_names]
-    coef_r_lm <- coef_r_lm[group_names]
-  }
-  if (isTRUE(test.logistic)) {
-    coef_l_logm <- coef_l_logm[names(coef_l_logm) %in% group_names]
-    coef_r_logm <- coef_r_logm[names(coef_r_logm) %in% group_names]
-    coef_l_logm <- coef_l_logm[group_names]
-    coef_r_logm <- coef_r_logm[group_names]
-  }
+  # if (isTRUE(test.linear)) {
+  #   coef_l_lm <- coef_l_lm[names(coef_l_lm) %in% var_names]
+  #   coef_r_lm <- coef_r_lm[names(coef_r_lm) %in% var_names]
+  #   coef_l_lm <- coef_l_lm[var_names]
+  #   coef_r_lm <- coef_r_lm[var_names]
+  # }
+  # if (isTRUE(test.logistic)) {
+  #   coef_l_logm <- coef_l_logm[names(coef_l_logm) %in% var_names]
+  #   coef_r_logm <- coef_r_logm[names(coef_r_logm) %in% var_names]
+  #   coef_l_logm <- coef_l_logm[var_names]
+  #   coef_r_logm <- coef_r_logm[var_names]
+  # }
   if (test.linear || test.logistic) {
-    dt.test[, c("sender", "receiver", "ligand", "receptor") := list(sender, receiver, ligand, receptor)]
+    dt.est[, c("sender", "receiver", "ligand", "receptor") := list(sender, receiver, ligand, receptor)]
+  }
+  
+  if(test.linear) {
+    dt.est[, c("coef_l_lm", "coef_r_lm") := list(list(coef_l_lm), list(coef_r_lm))]
+    dt.est[, c("vcov_l_lm", "vcov_r_lm") := list(list(vcov_l_lm), list(vcov_r_lm))]
+  }
+  if (test.logistic) {
+    dt.est[, c("coef_l_logm", "coef_r_logm") := list(list(coef_l_logm), list(coef_r_logm))]
+    dt.est[, c("vcov_l_logm", "vcov_r_logm") := list(list(vcov_l_logm), list(vcov_r_logm))]
   }
 
-  if (isTRUE(test.linear)) {
-    effect_size_linear <- contrast %*% (coef_l_lm * coef_r_lm)
-    gradient_matrix_linear <- matrix(0, nrow = nrow(contrast), ncol = length(group_names) * 2L)
-
-    for (i in seq_len(nrow(contrast))) {
-      for (j in seq_along(group_names)) {
-        group <- group_names[j]
-
-        ind_l_lm <- which(names(coef_l_lm) == group)
-        ind_r_lm <- which(names(coef_r_lm) == group) + length(group_names)
-
-        gradient_matrix_linear[i, ind_l_lm] <- contrast[i, j] * coef_r_lm[group]
-        gradient_matrix_linear[i, ind_r_lm] <- contrast[i, j] * coef_l_lm[group]
-      }
-    }
-
-    vcov_linear <- Matrix::bdiag(vcov_l_lm_group, vcov_r_lm_group)
-    cov_effect_size_linear <- gradient_matrix_linear %*% as.matrix(vcov_linear) %*% t(gradient_matrix_linear)
-
-    test_stat_linear <- t(effect_size_linear) %*% chol2inv(chol(cov_effect_size_linear)) %*% effect_size_linear
-    pvalue_linear <- pchisq(test_stat_linear, df = nrow(contrast), lower.tail = FALSE)
-
-    dt.test[, c("effect_size_linear", "pvalue_linear") := list(list(effect_size_linear), pvalue_linear)]
-    if (nrow(contrast) > 1L) {
-      dt.test[, paste0("effect_size_linear_", seq_len(nrow(contrast))) := transpose(effect_size_linear)]
-      dt.test[, effect_size_linear := NULL]
-    }
-  }
-
-  if (isTRUE(test.logistic)) {
-    effect_size_logistic <- contrast %*% (plogis(coef_l_logm) * plogis(coef_r_logm))
-    gradient_matrix_logistic <- matrix(0, nrow = nrow(contrast), ncol = length(group_names) * 2L)
-
-    for (i in seq_len(nrow(contrast))) {
-      for (j in seq_along(group_names)) {
-        group <- group_names[j]
-
-        ind_l_logm <- which(names(coef_l_logm) == group)
-        ind_r_logm <- which(names(coef_r_logm) == group) + length(group_names)
-
-        gradient_matrix_logistic[i, ind_l_logm] <- contrast[i, j] * plogis(coef_r_logm[group]) * dlogis(coef_l_logm[group])
-        gradient_matrix_logistic[i, ind_r_logm] <- contrast[i, j] * plogis(coef_l_logm[group]) * dlogis(coef_r_logm[group])
-      }
-    }
-
-    vcov_logistic <- Matrix::bdiag(vcov_l_logm_group, vcov_r_logm_group)
-    cov_effect_size_logistic <- gradient_matrix_logistic %*% as.matrix(vcov_logistic) %*% t(gradient_matrix_logistic)
-
-    test_stat_logistic <- t(effect_size_logistic) %*% chol2inv(chol(cov_effect_size_logistic)) %*% effect_size_logistic
-    pvalue_logistic <- pchisq(test_stat_logistic, df = nrow(contrast), lower.tail = FALSE)
-
-    dt.test[, c("effect_size_logistic", "pvalue_logistic") := list(list(effect_size_logistic), pvalue_logistic)]
-    if (nrow(contrast) > 1L) {
-      dt.test[, paste0("effect_size_logistic_", seq_len(nrow(contrast))) := transpose(effect_size_logistic)]
-      dt.test[, effect_size_logistic := NULL]
-    }
-  }
-
-  if (isTRUE(test.linear) && isTRUE(test.logistic)) {
-    effect_size_hurdle <- contrast %*% (coef_l_lm * coef_r_lm * plogis(coef_l_logm) * plogis(coef_r_logm))
-    gradient_matrix_hurdle <- matrix(0, nrow = nrow(contrast), ncol = length(group_names) * 4L)
-
-    for (i in seq_len(nrow(contrast))) {
-      for (j in seq_along(group_names)) {
-        group <- group_names[j]
-
-        ind_l_lm <- which(names(coef_l_lm) == group)
-        ind_l_logm <- which(names(coef_l_logm) == group) + length(group_names)
-        ind_r_lm <- which(names(coef_r_lm) == group) + length(group_names) * 2L
-        ind_r_logm <- which(names(coef_r_logm) == group) + length(group_names) * 3L
-
-        gradient_matrix_hurdle[i, ind_l_lm] <- contrast[i, j] * coef_r_lm[group] * plogis(coef_l_logm[group]) * plogis(coef_r_logm[group])
-        gradient_matrix_hurdle[i, ind_l_logm] <- contrast[i, j] * coef_l_lm[group] * coef_r_lm[group] * plogis(coef_r_logm[group]) * dlogis(coef_l_logm[group])
-        gradient_matrix_hurdle[i, ind_r_lm] <- contrast[i, j] * coef_l_lm[group] * plogis(coef_l_logm[group]) * plogis(coef_r_logm[group])
-        gradient_matrix_hurdle[i, ind_r_logm] <- contrast[i, j] * coef_l_lm[group] * coef_r_lm[group] * plogis(coef_l_logm[group]) * dlogis(coef_r_logm[group])
-      }
-    }
-    vcov_hurdle <- Matrix::bdiag(vcov_l_lm_group, vcov_l_logm_group, vcov_r_lm_group, vcov_r_logm_group)
-    cov_effect_size_hurdle <- gradient_matrix_hurdle %*% as.matrix(vcov_hurdle) %*% t(gradient_matrix_hurdle)
-
-    test_stat_hurdle <- t(effect_size_hurdle) %*% chol2inv(chol(cov_effect_size_hurdle)) %*% effect_size_hurdle
-    pvalue_hurdle <- pchisq(test_stat_hurdle, df = nrow(contrast), lower.tail = FALSE)
-    test_stat_2part <- test_stat_linear + test_stat_logistic
-    pvalue_2part <- pchisq(test_stat_2part, df = nrow(contrast) * 2L, lower.tail = FALSE)
-    pvalue_stouffer <- stouffer_combine_pvalues(c(pvalue_linear, pvalue_logistic))
-    pvalue_fisher <- fisher_combine_pvalues(c(pvalue_linear, pvalue_logistic))
-
-    dt.test[, c("effect_size_hurdle", "pvalue_hurdle", "pvalue_2part", "pvalue_stouffer", "pvalue_fisher") := 
-            list(list(effect_size_hurdle), pvalue_hurdle, pvalue_2part, pvalue_stouffer, pvalue_fisher)]
-    if (nrow(contrast) > 1L) {
-      dt.test[, paste0("effect_size_hurdle_", seq_len(nrow(contrast))) := transpose(effect_size_hurdle)]
-      dt.test[, effect_size_hurdle := NULL]
-    }
-  }
-
-  dt.test
+  dt.est
 }
 
 
@@ -411,4 +330,19 @@ rtrunc_norm <- function(n, mean = 0, sd = 1, lower = -Inf, upper = Inf) {
 ## inverse_gamma
 rinvgamma <- function(n, shape, rate = 1, scale = 1 / rate) {
   1 / rgamma(n, shape, scale)
+}
+
+## arguments that are different from defaults
+args_differ_from_defaults <- function(...) {
+  arg_names <- c(...)
+  f <- sys.function(sys.parent())
+  env <- parent.frame()
+  defaults <- formals(f)
+  differing <- vapply(arg_names, function(arg) {
+    current_val <- get(arg, envir = env)
+    default_val <- eval(defaults[[arg]], envir = env)
+    !identical(current_val, default_val)
+  }, logical(1))
+  
+  names(differing)[differing]
 }

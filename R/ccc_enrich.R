@@ -67,6 +67,9 @@
 #' @importFrom utils data
 #' @importFrom stats as.formula p.adjust pchisq pnorm qnorm sd
 #'
+#' @examples
+#' # example code
+#'
 #' @export
 
 ccc_enrich <- function(expression_matrix, metadata,

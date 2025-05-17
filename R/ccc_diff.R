@@ -1,7 +1,7 @@
-#' Identify Differential Cell-Cell Communication
+#' Differential Cell-Cell Communication Analysis
 #'
 #' For each communication pair (defined by a distinct combination of sender, receiver, ligand, and receptor), fit two gene-wise hurdle models (linear for expression levels > `threshold`; logistic for expression levels > `threshold` vs. expression levels <= `threshold`).
-#' Then perform Wald tests on the product of ligand expression levels in sender and receptor expression levels in receiver for differential cell-cell communication.
+#' Results tables of effects sizes and p-values can be generated using [ccc::ccc_test].
 #'
 #' @param expression_matrix a numeric matrix of normalized counts, with rows corresponding to genes and columns corresponding to cells. Both row names (gene symbols) and column names (cell identifiers) must be provided.
 #' @param metadata a data frame containing cell-level metadata (e.g., cell type, group, id, covariates).
@@ -35,10 +35,10 @@
 #' @param sep_detection logical scalar. If `TRUE` (the default), detect complete or quasi-complete separation in logistic models.
 #' @param sep_prop numeric scalar. For each ligand/receptor gene, if it is expressed above/below `threshold` in all cells of more than a `sep_prop` fraction of individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.
 #' @param sep_n numeric scalar. For each ligand/receptor gene, if it is expressed above/below `threshold` in all cells of more than `sep_n` individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.
-#' @param padj_method a character string for multiple testing correction method. This is passed to [stats::p.adjust()]. Defaults to "BH".
+#' @param padj_method a character string for multiple testing correction method. This is passed to [stats::p.adjust]. Defaults to "BH".
 #' @param cell_type_padj logical scalar. If `TRUE` (the default), adjust p-values for each sender-receiver pair.
-#' @param control_logm control parameters for optimization in [stats::glm()].
-#' @param control_lmm control parameters for optimization in [lme4::lmer()].
+#' @param control_logm control parameters for optimization in [stats::glm].
+#' @param control_lmm control parameters for optimization in [lme4::lmer].
 #' @param control_logmm control parameters for optimization in [GLMMadaptive::mixed_model].
 #' @param chunk_size integer scalar. The number of communication pairs (each defined by a distinct combination of sender, receiver, ligand, and receptor) to be sent to each parallel environment. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.
 #' @details
@@ -48,7 +48,7 @@
 #' When both linear and logistic components are fitted successfully, four different methods are used to combine their p-values:
 #' \itemize{
 #'   \item{\code{'Hurdle'}}: A chi-square test statistic is computed for the combined hurdle model, with degrees of freedom equal to the number of contrast parameters.
-#'   \item{\code{'2-part'}}: A chi-square test statistic is computed as the sum of the linear and logistic test statistics, with degrees of freedom equal to twice the number of contrast parameters.
+#'   \item{\code{'2-part'}}: A chi-square test statistic is computed as the sum of the linear and logistic test statistics, with degrees of freedom equal to twice the number of contrast parameters. This is only available for `test_type = "chisq"`.
 #'   \item{\code{Stouffer's method}}: P-values from the linear and logistic components are converted to z-scores, summed up, and converted back to a p-value.
 #'   \item{\code{Fisher's method}}: A chi-square test statistic is computed as -2 times the sum of the logarithms of the p-values from the linear and logistic components, with degrees of freedom equal to twice the number of p-values, which is 4 in this case.
 #' }
@@ -131,9 +131,9 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
     if (interactive()) {
       if (!handlers(global = NA)) {
         handlers(global = TRUE)
-        handlers("cli")
+        handlers("progress")
         message(
-          "Info: No global progress bars were found; the cli handler has been enabled. ",
+          "Info: No global progress bars were found; the 'progress' handler has been enabled. ",
           "See `vignette('progressr-intro')` for how to customize the progress bar settings."
         )
       }
@@ -154,17 +154,7 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
     stop("Missing required arguments: ", paste(missing_args, collapse = ", "))
   }
 
-  if (is.vector(contrast)) {
-    contrast <- matrix(contrast, nrow = 1L, dimnames = list(NULL, names(contrast)))
-  } else if (!is.matrix(contrast)) {
-    stop("'contrast' must be either a named vector or a matrix with column names.")
-  }
-  if (is.null(colnames(contrast))) {
-    stop("'contrast' must be either a named vector or a matrix with column names.")
-  }
-  if (qr(contrast)$rank < nrow(contrast)) {
-    stop("'contrast' must be full row rank")
-  }
+  
 
   if (is.null(rownames(expression_matrix)) || is.null(colnames(expression_matrix))) {
     stop("'expression_matrix' must have rownames (genes) and colnames (cell ids).")
@@ -214,7 +204,7 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
   if (!all(colnames(contrast) %in% unique(metadata[[group_col]]))) {
     stop(paste0("'contrast' contains group levels that are not present in the \"", group_col, "\" column of 'metadata'."))
   }
-  metadata <- metadata[metadata[[group_col]] %in% colnames(contrast), ]
+  # metadata <- metadata[metadata[[group_col]] %in% colnames(contrast), ]
 
   if (isTRUE(lmm_re) || isTRUE(logmm_re)) {
     if (is.null(id_col)) {
@@ -280,7 +270,7 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
   ### filter cell type
   filtered_obj <- filter_cell_type(
     metadata = metadata, sender = sender, receiver = receiver,
-    min_cell = min_cell, contrast = contrast
+    min_cell = min_cell
   )
   metadata_subset <- filtered_obj$metadata_subset
   sender <- filtered_obj$sender
@@ -303,6 +293,8 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
   sender_receiver_combinations <- expand.grid(sender = sender, receiver = receiver)
 
   pairs4analysis <- base::merge(sender_receiver_combinations, lr_table, by = NULL)
+  
+  unique_levels <- unique(metadata_subset[["group"]])
 
   setDT(pairs4analysis)
   npairs <- nrow(pairs4analysis)
@@ -310,14 +302,13 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
   i_s <- seq(1L, nrow(pairs4analysis), by = chunk_size)
   if (verbose) {
     p <- progressr::progressor(along = i_s)
-    message("Starting statistical analysis...")
+    # message("Starting statistical analysis...")
   }
 
   run_analysis <- function(i) {
     chunk <- pairs4analysis[i:min(i + chunk_size - 1L, npairs), ]
 
-
-    results.summary <- results.test <- results.error <- results.warning <- results.message <- list()
+    results.summary <- results.estimate <- results.error <- results.warning <- results.message <- list()
     for (j in 1L:nrow(chunk)) {
       sender <- chunk$sender[j]
       ligand <- chunk$ligand[j]
@@ -469,7 +460,7 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
       fit.r.linear <- fit_model(part = "linear", data = data_receiver_receptor_1, formula = formula_linear, name = "receptor.linear")
       fit.l.logistic <- fit_model(part = "logistic", data = data_sender_ligand, formula = formula_logistic, name = "ligand.logistic")
       fit.r.logistic <- fit_model(part = "logistic", data = data_receiver_receptor, formula = formula_logistic, name = "receptor.logistic")
-
+      
       if (length(warning_messages) > 0) {
         results.warning[[paste(sender, receiver, ligand, receptor, sep = "-")]] <- warning_messages
       }
@@ -480,10 +471,10 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
         results.error[[paste(sender, receiver, ligand, receptor, sep = "-")]] <- error_messages
       }
 
-      results.test[[length(results.test) + 1L]] <- ccc_test(
+      results.estimate[[length(results.estimate) + 1L]] <- ccc_estimate(
         fit.l.linear = fit.l.linear, fit.l.logistic = fit.l.logistic,
         fit.r.linear = fit.r.linear, fit.r.logistic = fit.r.logistic,
-        contrast = contrast, lmm_re = lmm_re, logmm_re = logmm_re,
+        unique_levels = unique_levels, lmm_re = lmm_re, logmm_re = logmm_re,
         sandwich = sandwich,
         sender = sender, receiver = receiver,
         ligand = ligand, receptor = receptor
@@ -494,7 +485,7 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
     }
     list(
       descriptive_stats = rbindlist(results.summary),
-      test_results = rbindlist(results.test, fill = TRUE),
+      estimate_results = rbindlist(results.estimate, fill = TRUE),
       errors = results.error,
       warnings = results.warning,
       messages = results.message
@@ -506,41 +497,17 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
   setDTthreads(threads = old_nthreads)
 
   list.descriptive_stats <- lapply(results_obj, \(x) x$descriptive_stats)
-  list.test_results <- lapply(results_obj, \(x) x$test_results)
+  list.estimate_results <- lapply(results_obj, \(x) x$estimate_results)
   list.errors <- lapply(results_obj, \(x) x$errors)
   list.warnings <- lapply(results_obj, \(x) x$warnings)
   list.messages <- lapply(results_obj, \(x) x$messages)
 
-  dt.test.all <- rbindlist(list.test_results, fill = TRUE)
-  # cell_type_padj
-
-  # pval_cols <- c("pvalue_linear", "pvalue_logistic", "pvalue_hurdle", "pvalue_2part")
-  pval_cols <- grep("^pvalue", names(dt.test.all), value = TRUE)
-
-  if (cell_type_padj) {
-    dt.test.all[, (paste0("padj_", sub("pvalue\\_", "", pval_cols))) :=
-      lapply(.SD, function(p) p.adjust(p, method = padj_method)),
-    by = .(sender, receiver), .SDcols = pval_cols
-    ]
-  } else {
-    dt.test.all[, (paste0("padj_", sub("pvalue\\_", "", pval_cols))) :=
-      lapply(.SD, function(p) p.adjust(p, method = padj_method)),
-    .SDcols = pval_cols
-    ]
-  }
-  ordered_cols <- names(dt.test.all)
-  for (pval in rev(pval_cols)) {
-    padj <- sub("pvalue\\_", "padj_", pval)
-    if (padj %in% names(dt.test.all)) {
-      idx <- match(pval, ordered_cols)
-      ordered_cols <- append(ordered_cols[ordered_cols != padj], padj, after = idx)
-    }
-  }
-  setcolorder(dt.test.all, ordered_cols)
+  dt.estimate.all <- rbindlist(list.estimate_results, fill = TRUE)
 
   list(
+    func = as.character(match.call()[[1]]),
     summary = as.data.frame(rbindlist(list.descriptive_stats)),
-    test = as.data.frame(dt.test.all),
+    estimate = as.data.frame(dt.estimate.all),
     errors = do.call(c, list.errors),
     warnings = do.call(c, list.warnings),
     messages = do.call(c, list.messages)
