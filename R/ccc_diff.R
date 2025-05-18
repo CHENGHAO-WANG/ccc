@@ -26,7 +26,7 @@
 #'    \item \dQuote{\code{min_rate_gene}}: the subunit gene with the minimum expression rate is selected. The expression rate for a gene is calculated as the number of cells with expression level above `threshold` divided by the total number of cells.
 #'  }
 #' @param sandwich logical scalar. If `TRUE`, sandwich standard errors are used in the calculations. Defaults to `FALSE`.
-#' @param verbose logical scalar. If `TRUE` (the default), display a progress bar. The default handler is "cli". This package uses the \pkg{progressr} framework for progress reporting, so users can customize the progress bar. See [progressr::handlers()] for customizing progress bar behavior.
+#' @param verbose logical scalar. If `TRUE` (the default), display a progress bar. The default handler is "progress". This package uses the \pkg{progressr} framework for progress reporting, so users can customize the progress bar. See [progressr::handlers()] for customizing progress bar behavior.
 #' @param min_cell integer scalar. Filter out cell types with fewer than `min_cell` cells. Defaults to 10.
 #' @param min_pct numeric scalar. Only test ligand-receptor pairs that are expressed above `threshold` in a minimum fraction of `min_pct` cells for `large_n` individuals/samples in sender and receiver cell types respectively. Defaults to 0.01.
 #' @param large_n integer scalar. Number of individuals/samples that are considered to be "large". Defaults to 2.
@@ -154,8 +154,6 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
     stop("Missing required arguments: ", paste(missing_args, collapse = ", "))
   }
 
-  
-
   if (is.null(rownames(expression_matrix)) || is.null(colnames(expression_matrix))) {
     stop("'expression_matrix' must have rownames (genes) and colnames (cell ids).")
   }
@@ -215,8 +213,7 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
     }
   }
   if (isFALSE(lmm_re) && isFALSE(logmm_re) && !is.null(id_col)) {
-    message("'id_col' is not NULL. This input will be ignored, because 'lmm_re' and 'logmm_re' are FALSE")
-    message("To suppress this message, set 'id_col = NULL'.")
+    message("'id_col' is not NULL. This input will be ignored, because 'lmm_re' and 'logmm_re' are FALSE. To suppress this message, set 'id_col = NULL'.")
     id_col <- NULL
   }
 
@@ -288,7 +285,7 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
     )
   }
 
-  ### filter lr; fit models; conduct tests
+  ### filter lr; fit models; perform tests
   # Create all possible combinations of sender and receiver
   sender_receiver_combinations <- expand.grid(sender = sender, receiver = receiver)
 
@@ -324,6 +321,11 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
       receptor_genes <- unlist(strsplit(receptor, "_"))
 
       # Subset expression matrix for ligands and receptors
+      existing_ligand_genes <- intersect(ligand_genes, rownames(expression_matrix))
+      existing_receptor_genes <- intersect(receptor_genes, rownames(expression_matrix))
+      if (length(existing_ligand_genes) < length(ligand_genes) || length(existing_receptor_genes) < length(receptor_genes)) {
+        next
+      }
       ligand_expr_values <- expression_matrix[ligand_genes, data_sender_ligand$cell_id, drop = TRUE]
       receptor_expr_values <- expression_matrix[receptor_genes, data_receiver_receptor$cell_id, drop = TRUE]
 
@@ -333,7 +335,7 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
 
       # Compute expression rates
       compute_expression_rate <- function(data_subset) {
-        sapply(metadata_subset$id, function(uid) {
+        sapply(unique_ids, function(uid) {
           mean(data_subset[id == uid, y] > threshold)
         })
       }

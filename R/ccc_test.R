@@ -7,6 +7,24 @@
 ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
                      c_linear = 0, c_logisitc = 0, c_hurdel = 0,
                      verbose = TRUE, padj_method = "BH", cell_type_padj = TRUE) {
+  # verbose
+  assertthat::assert_that(assertthat::is.flag(verbose))
+  
+  if (verbose) {
+    if (interactive()) {
+      if (!handlers(global = NA)) {
+        handlers(global = TRUE)
+        handlers("progress")
+        message(
+          "Info: No global progress bars were found; the 'progress' handler has been enabled. ",
+          "See `vignette('progressr-intro')` for how to customize the progress bar settings."
+        )
+      }
+    }
+  }
+  
+  padj_method <- match.arg(padj_method, stats::p.adjust.methods)
+  
   if (!is.null(test_type)) {
     test_type <- match.arg(test_type, choices = c("chisq", "z"))
   }
@@ -80,6 +98,10 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
   dt.test.all <- as.data.table(ccc_obj$estimate)
   unique_levels <- colnames(contrast)
   var_names <- paste0(var_name, unique_levels)
+  if (verbose) {
+    p <- progressr::progressor(along = seq_len(nrow(data.test.all)))
+    # message("Starting statistical analysis...")
+  }
   
   wald.test <- function(coef_l_lm, coef_r_lm, coef_llogm, coef_r_logm,
                    vcov_l_lm, vcov_r_lm, vcov_l_logm, vcov_r_logm) {
@@ -263,6 +285,9 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
       setcolorder(dt.test, cols_reordered)  
     }
     
+    if (verbose) {
+      p()
+    }
     dt.test
   }
   

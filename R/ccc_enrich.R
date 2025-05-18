@@ -25,7 +25,7 @@
 #'    \item \dQuote{\code{min_avg_gene}}: the subunit gene with the minimum average expression is selected.
 #'    \item \dQuote{\code{min_rate_gene}}: the subunit gene with the minimum expression rate is selected. The expression rate for a gene is calculated as the number of cells with expression level above `threshold` divided by the total number of cells.
 #'  }
-#' @param verbose logical scalar. If `TRUE` (the default), display a progress bar. The default handler is "cli". This package uses the \pkg{progressr} framework for progress reporting, so users can customize the progress bar. See [progressr::handlers()] for customizing progress bar behavior.
+#' @param verbose logical scalar. If `TRUE` (the default), display a progress bar. The default handler is "progress". This package uses the \pkg{progressr} framework for progress reporting, so users can customize the progress bar. See [progressr::handlers()] for customizing progress bar behavior.
 #' @param min_cell integer scalar. Filter out cell types with fewer than `min_cell` cells. Defaults to 10.
 #' @param min_pct numeric scalar. Only test ligand-receptor pairs that are expressed above `threshold` in a minimum fraction of `min_pct` cells for `large_n` individuals/samples in sender and receiver cell types respectively. Defaults to 0.01.
 #' @param large_n integer scalar. Number of individuals/samples that are considered to be "large". Defaults to 2.
@@ -74,12 +74,15 @@
 
 ccc_enrich <- function(expression_matrix, metadata,
                       cell_id_col = "cell_id", cell_type_col = "cell_type",
-                      id_col = "id", sender = NULL, receiver = NULL,
+                      id_col = "id", covar_col = NULL, cdr = TRUE,
+                      sender = NULL, receiver = NULL,
                       lr = "omnipathr", multi_sub = "minimum",
                       verbose = TRUE, min_cell = 10,
-                      min_pct = 0.01, large_n = 2, min_total_pct = 0,
+                      min_pct = 0.01, large_n = 1, min_total_pct = 0,
                       threshold = 0, sep_detection = TRUE, sep_prop = 0, sep_n = 0,
                       padj_method = "BH", cell_type_padj = TRUE,
+                      control_logm = list(),
+                      control_lmm = lme4::lmerControl(), control_logmm = list(),
                       chunk_size = 10, lmm_re = FALSE, logmm_re = FALSE, sandwich = FALSE) {
   old_nthreads <- getDTthreads()
   on.exit(setDTthreads(old_nthreads), add = TRUE)
@@ -90,17 +93,20 @@ ccc_enrich <- function(expression_matrix, metadata,
     if (interactive()) {
       if (!handlers(global = NA)) {
         handlers(global = TRUE)
-        handlers("cli")
+        handlers("progress")
         message(
-          "Info: No global progress bars were found; the cli handler has been enabled. ",
+          "Info: No global progress bars were found; the 'progress' handler has been enabled. ",
           "See `vignette('progressr-intro')` for how to customize the progress bar settings."
         )
       }
     }
   }
 
+  assertthat::assert_that(assertthat::is.flag(cdr))
+  assertthat::assert_that(assertthat::is.flag(lmm_re))
+  assertthat::assert_that(assertthat::is.flag(logmm_re))
+  assertthat::assert_that(assertthat::is.flag(sandwich))
   assertthat::assert_that(assertthat::is.flag(sep_detection))
-  assertthat::assert_that(assertthat::is.flag(cell_type_padj))
 
   required_args <- c("expression_matrix", "metadata")
   passed_args <- names(match.call())[-1]
@@ -121,7 +127,14 @@ ccc_enrich <- function(expression_matrix, metadata,
   }
 
   multi_sub <- match.arg(multi_sub, choices = c("minimum", "arithmetic_mean", "geometric_mean", "min_avg_gene", "min_rate_gene"))
-
+  
+  err_msg <- " in 'covar_col'. Please use a different argument or rename it."
+  if ("id" %in% covar_col) {
+    stop(paste0("\"id\"", err_msg))
+  }
+  if ("cdr" %in% covar_col && isTRUE(cdr)) {
+    stop(paste0("\"cdr\"", err_msg))
+  }
   if ("y" %in% colnames(metadata)) {
     stop("\"y\" in column names of 'metadata'. Please rename it.")
   }
@@ -129,14 +142,28 @@ ccc_enrich <- function(expression_matrix, metadata,
     stop("\"z\" in column names of 'metadata'. Please rename it.")
   }
 
+  covar_exists <- covar_col %in% colnames(metadata)
+  if (!is.null(covar_col) && !all(covar_exists)) {
+    stop(paste0("The following columns specified in 'covar_col' do not exist in 'metadata': ", paste(covar_col[!covar_exists], collapse = ", ")))
+  }
   if (isFALSE(cell_id_col %in% colnames(metadata))) {
     stop(paste0("'cell_id_col' \"", cell_id_col, "\" does not exist in 'metadata'."))
   }
   if (isFALSE(cell_type_col %in% colnames(metadata))) {
     stop(paste0("'cell_type_col' \"", cell_type_col, "\" does not exist in 'metadata'."))
   }
-  if (isFALSE(id_col %in% colnames(metadata))) {
-    stop(paste0("'id_col' \"", id_col, "\" does not exist in 'metadata'."))
+
+  if (isTRUE(lmm_re) || isTRUE(logmm_re)) {
+    if (is.null(id_col)) {
+      stop("'id_col' is not specified, while 'lmm_re' or 'logmm_re' is TRUE")
+    }
+    if (isFALSE(id_col %in% colnames(metadata))) {
+      stop(paste0("'id_col' \"", id_col, "\" does not exist in 'metadata'."))
+    }
+  }
+  if (isFALSE(lmm_re) && isFALSE(logmm_re) && !is.null(id_col)) {
+    message("'id_col' is not NULL. This input will be ignored, because 'lmm_re' and 'logmm_re' are FALSE. To suppress this message, set 'id_col = NULL'.")
+    id_col <- NULL
   }
 
   if (is.null(sender)) {
@@ -146,15 +173,17 @@ ccc_enrich <- function(expression_matrix, metadata,
     message("'receiver' is not specified. All cell types will be considered as potential receivers in the analysis.")
   }
 
-  padj_method <- match.arg(padj_method, stats::p.adjust.methods)
-
   metadata <- as.data.table(metadata)
-  metadata <- rename_metadata(
+  metadata <- rename_metadata2(
     metadata = metadata,
     cell_id_col = cell_id_col, cell_type_col = cell_type_col,
-    id_col = id_col, group_col = id_col  # Use id_col as group_col for compatibility with utility functions
+    id_col = id_col 
   )
-
+  
+  if (metadata[, uniqueN(cell_type)] == 1) {
+    stop("Only one cell type in `metadata`. Please provide a dataset with multiple cell types.")
+  }
+  
   num_ids <- metadata[, uniqueN(id)]
 
   if (isTRUE(sep_detection)) {
@@ -187,34 +216,27 @@ ccc_enrich <- function(expression_matrix, metadata,
   lr_table <- prep_lr(lr = lr)
 
   ### filter cell type
-  # Create a dummy contrast matrix for compatibility with filter_cell_type
-  dummy_contrast <- matrix(1, nrow = 1, ncol = length(unique(metadata$id)))
-  colnames(dummy_contrast) <- unique(metadata$id)
-  
-  # Store original metadata for background cell types
-  metadata_original <- copy(metadata)
-  
   # Only filter cell types for sender and receiver, but keep all cells in the dataset
   filtered_obj <- filter_cell_type(
     metadata = metadata, sender = sender, receiver = receiver,
-    min_cell = min_cell, contrast = dummy_contrast
+    min_cell = min_cell
   )
   
   # Update sender and receiver lists with filtered cell types
   sender <- filtered_obj$sender
   receiver <- filtered_obj$receiver
-  
   # Keep the original metadata instead of using the filtered subset
-  metadata_subset <- metadata_original
   
-  rm(metadata, filtered_obj, metadata_original)
+  rm(filtered_obj)
   gc()
 
-  ### compute cdr if needed for future extensions
-  metadata_subset <- compute_cdr(
-    expression_matrix = expression_matrix,
-    metadata_subset = metadata_subset, threshold = threshold
-  )
+  ### compute cdr if specified by the user
+  if (isTRUE(cdr)) {
+    metadata <- compute_cdr(
+      expression_matrix = expression_matrix,
+      metadata_subset = metadata, threshold = threshold
+    )
+  }
 
   ### filter lr; prepare for analysis
   # Create all possible combinations of sender and receiver
@@ -222,48 +244,108 @@ ccc_enrich <- function(expression_matrix, metadata,
 
   pairs4analysis <- base::merge(sender_receiver_combinations, lr_table, by = NULL)
 
+  unique_levels <- c("target", "background")
+  
   setDT(pairs4analysis)
   npairs <- nrow(pairs4analysis)
+  unique_ids <- unique(metadata[, id])
   i_s <- seq(1L, nrow(pairs4analysis), by = chunk_size)
   if (verbose) {
     p <- progressr::progressor(along = i_s)
-    message("Starting enrichment analysis...")
+    # message("Starting enrichment analysis...")
   }
 
   # Function to analyze a chunk of pairs
-  analyze_chunk <- function(i) {
+  run_analysis <- function(i) {
     chunk <- pairs4analysis[i:min(i + chunk_size - 1L, npairs), ]
 
-    results.summary <- results.test <- results.error <- results.warning <- results.message <- list()
+    results.summary <- results.estimate <- results.error <- results.warning <- results.message <- list()
     for (j in 1L:nrow(chunk)) {
       target_sender <- chunk$sender[j]
       ligand <- chunk$ligand[j]
       target_receiver <- chunk$receiver[j]
       receptor <- chunk$receptor[j]
 
+      data_sender_ligand <- copy(metadata)
+      data_receiver_receptor <- copy(metadata)
+      data_sender_ligand[, class := ifelse(cell_type == target_sender, "target", "background")]
+      data_receiver_receptor[, class := ifelse(cell_type == target_receiver, "target", "background")]
+      
       # Define background cell types (all except the target)
       background_sender <- setdiff(sender, target_sender)
       background_receiver <- setdiff(receiver, target_receiver)
 
-      # Create copies of metadata_subset for target and background
-      data_target_sender <- metadata_subset[cell_type == target_sender]
-      data_target_receiver <- metadata_subset[cell_type == target_receiver]
-      # For background, include ALL cells from non-target cell types, not just from filtered sender/receiver
-      data_background_sender <- metadata_subset[cell_type != target_sender]
-      data_background_receiver <- metadata_subset[cell_type != target_receiver]
+      # # Create copies of metadata_subset for target and background
+      # data_target_sender <- metadata_subset[cell_type == target_sender]
+      # data_target_receiver <- metadata_subset[cell_type == target_receiver]
+      # # For background, include ALL cells from non-target cell types, not just from filtered sender/receiver
+      # data_background_sender <- metadata_subset[cell_type != target_sender]
+      # data_background_receiver <- metadata_subset[cell_type != target_receiver]
 
       # Handle single gene or multi-gene ligands and receptors
       ligand_genes <- unlist(strsplit(ligand, "_"))
       receptor_genes <- unlist(strsplit(receptor, "_"))
 
-      # Check if all genes exist in the expression matrix
-      missing_genes <- setdiff(c(ligand_genes, receptor_genes), rownames(expression_matrix))
-      if (length(missing_genes) > 0) {
-        results.error[[paste(target_sender, target_receiver, ligand, receptor, sep = "_")]] <- 
-          paste("Missing genes in expression matrix:", paste(missing_genes, collapse = ", "))
+      # # Check if all genes exist in the expression matrix
+      # missing_genes <- setdiff(c(ligand_genes, receptor_genes), rownames(expression_matrix))
+      # if (length(missing_genes) > 0) {
+      #   results.error[[paste(target_sender, target_receiver, ligand, receptor, sep = "_")]] <- 
+      #     paste("Missing genes in expression matrix:", paste(missing_genes, collapse = ", "))
+      #   next
+      # }
+      existing_ligand_genes <- intersect(ligand_genes, rownames(expression_matrix))
+      existing_receptor_genes <- intersect(receptor_genes, rownames(expression_matrix))
+      if (length(existing_ligand_genes) < length(ligand_genes) || length(existing_receptor_genes) < length(receptor_genes)) {
         next
       }
-
+      ligand_expr_values <- expression_matrix[ligand_genes, data_sender_ligand$cell_id, drop = TRUE]
+      receptor_expr_values <- expression_matrix[receptor_genes, data_receiver_receptor$cell_id, drop = TRUE]
+      
+      data_sender_ligand[, y := compute_expression_value(ligand_expr_values, multi_sub, threshold)]
+      data_receiver_receptor[, y := compute_expression_value(receptor_expr_values, multi_sub, threshold)]
+      
+      # Compute expression rates
+      compute_expression_rate <- function(data_copy) {
+        sapply(unique_ids, function(uid) {
+          mean(data_copy[id == uid & class == "target", y] > threshold)
+        })
+      }
+      
+      ligand_expression_rates <- compute_expression_rate(data_sender_ligand)
+      receptor_expression_rates <- compute_expression_rate(data_receiver_receptor)
+      
+      # Check if the number of ids with both ligand and receptor expression rate >= min_pct is >= large_n
+      valid_ids <- sum((ligand_expression_rates >= min_pct) & (receptor_expression_rates >= min_pct))
+      if (valid_ids < large_n) {
+        next
+      }
+      
+      # Another filtering step based on total percentage
+      total_pct_ligand <- data_sender_ligand[class == "target", mean(y > threshold)]
+      total_pct_receptor <- data_receiver_receptor[class == "target", mean(y > threshold)]
+      
+      if (min(total_pct_ligand, total_pct_receptor) < min_total_pct) {
+        next
+      }
+      
+      # Add indicator column
+      data_sender_ligand[, z := ifelse(y > threshold, 1, 0)]
+      data_receiver_receptor[, z := ifelse(y > threshold, 1, 0)]
+      
+      # Subset data
+      data_sender_ligand_1 <- data_sender_ligand[z == 1]
+      data_receiver_receptor_1 <- data_receiver_receptor[z == 1]
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
       # Try to process this pair with error handling
       tryCatch({
         # Extract expression for ligand genes in target sender
