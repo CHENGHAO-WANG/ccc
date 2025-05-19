@@ -48,11 +48,41 @@ detect_re_separation <- function(dt, z_col, id_col, num_ids = NULL, sep_prop = 0
   return(detection)
 }
 
+detect_re_separation2 <- function(dt, z_col, id_col, num_ids = NULL, sep_sample_prop = 0, sep_sample_n = 0) {
+  # Count the number of distinct id's
+  if (is.null(num_ids)) {
+    num_ids <- dt[, uniqueN(get(id_col))]
+  }
+  
+  # Function to check if all z values are 0 or all are 1
+  is_separated <- function(z) all(z == 0) || all(z == 1)
+  
+  # Check per id whether it's separated within target or background
+  count_sep_ids <- dt[
+    , .(target_sep = is_separated(get(z_col)[class == "target"]),
+        background_sep = is_separated(get(z_col)[class == "background"])),
+    by = get(id_col)
+  ][, sum(target_sep | background_sep)]
+  
+  # Check if the proportion exceeds the threshold
+  detection <- count_sep_ids > sep_sample_prop * num_ids && count_sep_ids > sep_sample_n
+  
+  return(detection)
+}
 
 detect_all_zeros <- function(dt, id_col, id) {
   unique_id_col <- unique(dt[[id_col]]) # Get unique values from id_col
   !all(id %in% unique_id_col)
 }
+
+detect_all_zeros2 <- function(dt, id_col, id) {
+  # Get ids that have both 'target' and 'background'
+  id_with_both_classes <- dt[, .(n_classes = uniqueN(class)), by = get(id_col)][n_classes == 2, get]
+  
+  # Check if all input ids are in that set
+  !all(id %in% id_with_both_classes)
+}
+
 
 compute_group_stats <- function(dt, y_col = "y", group_col = "group", z_col = "z", prefix) {
   # Compute stats for groups that are present in the data

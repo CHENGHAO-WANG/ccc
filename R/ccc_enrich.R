@@ -13,7 +13,11 @@
 #' @param metadata a data frame containing cell-level metadata (e.g., cell type, group, id, covariates).
 #' @param cell_id_col a character string specifying the name of the column in `metadata` that contains cell identifiers. These ID's should match the column names of `expression_matrix`. Defaults to `"cell_id"`.
 #' @param cell_type_col a character string specifying the name of the column in `metadata` that contains cell type annotations. Defaults to `"cell_type"`.
+#' @param covar_col a character string or a character vector specifying the column(s) in `metadata` that represent covariates to include in the model. Defaults to `NULL`, meaning no covariates are adjusted for.
+#' @param cdr logical scalar. If `TRUE` (the default), calculate and adjust for cellular detection rates (CDR). The CDR of a cell is defined as the number of genes with expression level above `threshold` divided by the total number of genes.
 #' @param id_col a character string specifying the name of the column in `metadata` that contains individual-level (sample-level) ID's. Defaults to `"id"`.
+#' @param lmm_re logical scalar. If `TRUE`, use linear mixed models with random effects for the linear model component. Defaults to `FALSE`.
+#' @param logmm_re logical scalar. If `TRUE`, use generalized linear mixed models with random effects for the logistic model component. Defaults to `FALSE`.
 #' @param sender a character string or a character vector specifying the cell types as sender (expressing ligands in cell-cell communication). Defaults to all cell types.
 #' @param receiver a character string or a character vector specifying the cell types as receiver (expressing receptors in cell-cell communication). Defaults to all cell types.
 #' @param lr specifies the ligand-receptor database to use. Can be `"omnipathr"` (the default), `"ramilowski"`, or a user-supplied data frame. If `"omnipathr"` or `"ramilowski"` is provided, the corresponding built-in dataset is used. If a data frame is provided, it must contain exactly two columns named `"ligand"` and `"receptor"`, with gene symbols as entries. For multi-subunit ligands/receptors, the gene symbols of all subunits must be joined by `_`. (e.g., `"CLCF1_CRLF1"` for a ligand composed of CLCF1 and CRLF1)
@@ -28,17 +32,16 @@
 #' @param verbose logical scalar. If `TRUE` (the default), display a progress bar. The default handler is "progress". This package uses the \pkg{progressr} framework for progress reporting, so users can customize the progress bar. See [progressr::handlers()] for customizing progress bar behavior.
 #' @param min_cell integer scalar. Filter out cell types with fewer than `min_cell` cells. Defaults to 10.
 #' @param min_pct numeric scalar. Only test ligand-receptor pairs that are expressed above `threshold` in a minimum fraction of `min_pct` cells for `large_n` individuals/samples in sender and receiver cell types respectively. Defaults to 0.01.
-#' @param large_n integer scalar. Number of individuals/samples that are considered to be "large". Defaults to 2.
+#' @param large_n integer scalar. Number of individuals/samples that are considered to be "large". Defaults to 1.
 #' @param min_total_pct numeric scalar. Only test ligand-receptor pairs that are detected (expression level above `threshold`) in a minimum fraction of `min_total_pct` cells across all individuals/samples in sender and receiver cell types respectively. Defaults to 0.
 #' @param threshold numeric scalar. A gene is considered expressed in a cell if its expression level is greater than `threshold`. Defaults to 0.
 #' @param sep_detection logical scalar. If `TRUE` (the default), detect complete or quasi-complete separation in logistic models.
-#' @param sep_prop numeric scalar. For each ligand/receptor gene, if it is expressed above/below `threshold` in all cells of more than a `sep_prop` fraction of individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.
-#' @param sep_n numeric scalar. For each ligand/receptor gene, if it is expressed above/below `threshold` in all cells of more than `sep_n` individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.
-#' @param padj_method a character string for multiple testing correction method. This is passed to [stats::p.adjust()]. Defaults to "BH".
-#' @param cell_type_padj logical scalar. If `TRUE` (the default), adjust p-values for each sender-receiver pair.
+#' @param sep_sample_prop numeric scalar. For each ligand/receptor gene, if it is expressed above/below `threshold` in all cells of more than a `sep_sample_prop` fraction of individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.
+#' @param sep_sample_n numeric scalar. For each ligand/receptor gene, if it is expressed above/below `threshold` in all cells of more than `sep_sample_n` individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.
+#' @param control_logm control parameters for optimization in [stats::glm].
+#' @param control_lmm control parameters for optimization in [lme4::lmer].
+#' @param control_logmm control parameters for optimization in [GLMMadaptive::mixed_model].
 #' @param chunk_size integer scalar. The number of communication pairs (each defined by a distinct combination of sender, receiver, ligand, and receptor) to be sent to each parallel environment. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.
-#' @param lmm_re logical scalar. If `TRUE`, use linear mixed models with random effects for the linear model component. Defaults to `FALSE`.
-#' @param logmm_re logical scalar. If `TRUE`, use generalized linear mixed models with random effects for the logistic model component. Defaults to `FALSE`.
 #' @param sandwich logical scalar. If `TRUE`, use sandwich variance estimators for robust inference. Defaults to `FALSE`.
 #'
 #' @details
@@ -74,16 +77,16 @@
 
 ccc_enrich <- function(expression_matrix, metadata,
                       cell_id_col = "cell_id", cell_type_col = "cell_type",
-                      id_col = "id", covar_col = NULL, cdr = TRUE,
+                      covar_col = NULL, cdr = TRUE,
+                      id_col = "id", lmm_re = FALSE, logmm_re = FALSE,
                       sender = NULL, receiver = NULL,
                       lr = "omnipathr", multi_sub = "minimum",
                       verbose = TRUE, min_cell = 10,
                       min_pct = 0.01, large_n = 1, min_total_pct = 0,
-                      threshold = 0, sep_detection = TRUE, sep_prop = 0, sep_n = 0,
-                      padj_method = "BH", cell_type_padj = TRUE,
+                      threshold = 0, sep_detection = TRUE, sep_sample_prop = 0, sep_sample_n = 0,
                       control_logm = list(),
                       control_lmm = lme4::lmerControl(), control_logmm = list(),
-                      chunk_size = 10, lmm_re = FALSE, logmm_re = FALSE, sandwich = FALSE) {
+                      chunk_size = 10, sandwich = FALSE) {
   old_nthreads <- getDTthreads()
   on.exit(setDTthreads(old_nthreads), add = TRUE)
 
@@ -116,7 +119,7 @@ ccc_enrich <- function(expression_matrix, metadata,
   }
 
   if (is.null(rownames(expression_matrix)) || is.null(colnames(expression_matrix))) {
-    stop("'expression_matrix' must have rownames (genes) and colnames (cell ids).")
+    stop("`expression_matrix` must have rownames (genes) and colnames (cell ids).")
   }
   
   if (any(is.na(expression_matrix))) {
@@ -128,49 +131,59 @@ ccc_enrich <- function(expression_matrix, metadata,
 
   multi_sub <- match.arg(multi_sub, choices = c("minimum", "arithmetic_mean", "geometric_mean", "min_avg_gene", "min_rate_gene"))
   
-  err_msg <- " in 'covar_col'. Please use a different argument or rename it."
+  err_msg <- " in `covar_col`. Please use a different argument or rename it."
   if ("id" %in% covar_col) {
     stop(paste0("\"id\"", err_msg))
+  }
+  if ("cell_id" %in% covar_col) {
+    stop(paste0("\"cell_id\"", err_msg))
+  }
+  if ("cell_type" %in% covar_col) {
+    stop(paste0("\"cell_type\"", err_msg))
   }
   if ("cdr" %in% covar_col && isTRUE(cdr)) {
     stop(paste0("\"cdr\"", err_msg))
   }
+  
   if ("y" %in% colnames(metadata)) {
-    stop("\"y\" in column names of 'metadata'. Please rename it.")
+    stop("\"y\" in column names of `metadata`. Please rename it.")
   }
   if ("z" %in% colnames(metadata)) {
-    stop("\"z\" in column names of 'metadata'. Please rename it.")
+    stop("\"z\" in column names of `metadata`. Please rename it.")
+  }
+  if ("class" %in% colnames(metadata)) {
+    stop("\"class\" in column names of `metadata`. Please rename it.")
   }
 
   covar_exists <- covar_col %in% colnames(metadata)
   if (!is.null(covar_col) && !all(covar_exists)) {
-    stop(paste0("The following columns specified in 'covar_col' do not exist in 'metadata': ", paste(covar_col[!covar_exists], collapse = ", ")))
+    stop(paste0("The following columns specified in `covar_col` do not exist in `metadata`: ", paste(covar_col[!covar_exists], collapse = ", ")))
   }
   if (isFALSE(cell_id_col %in% colnames(metadata))) {
-    stop(paste0("'cell_id_col' \"", cell_id_col, "\" does not exist in 'metadata'."))
+    stop(paste0("`cell_id_col` \"", cell_id_col, "\" does not exist in `metadata`."))
   }
   if (isFALSE(cell_type_col %in% colnames(metadata))) {
-    stop(paste0("'cell_type_col' \"", cell_type_col, "\" does not exist in 'metadata'."))
+    stop(paste0("`cell_type_col` \"", cell_type_col, "\" does not exist in `metadata`."))
   }
 
   if (isTRUE(lmm_re) || isTRUE(logmm_re)) {
     if (is.null(id_col)) {
-      stop("'id_col' is not specified, while 'lmm_re' or 'logmm_re' is TRUE")
+      stop("`id_col` is not specified, while `lmm_re` or `logmm_re` is TRUE")
     }
     if (isFALSE(id_col %in% colnames(metadata))) {
-      stop(paste0("'id_col' \"", id_col, "\" does not exist in 'metadata'."))
+      stop(paste0("`id_col` \"", id_col, "\" does not exist in `metadata`."))
     }
   }
   if (isFALSE(lmm_re) && isFALSE(logmm_re) && !is.null(id_col)) {
-    message("'id_col' is not NULL. This input will be ignored, because 'lmm_re' and 'logmm_re' are FALSE. To suppress this message, set 'id_col = NULL'.")
+    message("`id_col` is not NULL. This input will be ignored, because `lmm_re` and `logmm_re` are FALSE. To suppress this message, set `id_col = NULL`.")
     id_col <- NULL
   }
 
   if (is.null(sender)) {
-    message("'sender' is not specified. All cell types will be considered as potential senders in the analysis.")
+    message("`sender` is not specified. All cell types will be considered as potential senders in the analysis.")
   }
   if (is.null(receiver)) {
-    message("'receiver' is not specified. All cell types will be considered as potential receivers in the analysis.")
+    message("`receiver` is not specified. All cell types will be considered as potential receivers in the analysis.")
   }
 
   metadata <- as.data.table(metadata)
@@ -187,28 +200,28 @@ ccc_enrich <- function(expression_matrix, metadata,
   num_ids <- metadata[, uniqueN(id)]
 
   if (isTRUE(sep_detection)) {
-    if (sep_prop < 0 || sep_prop > 1) {
-      stop("'sep_prop' must be between 0 and 1 (inclusive).")
+    if (sep_sample_prop < 0 || sep_sample_prop > 1) {
+      stop("`sep_sample_prop` must be between 0 and 1 (inclusive).")
     }
-    if (sep_n < 0 || sep_n > num_ids) {
-      stop("'sep_n' must be between 0 and number of samples (inclusive).")
+    if (sep_sample_n < 0 || sep_sample_n > num_ids) {
+      stop("`sep_sample_n` must be between 0 and number of samples (inclusive).")
     }
   }
 
   #####################################################
   if (length(setdiff(metadata$cell_id, colnames(expression_matrix))) > 0) {
-    stop("Cell ids from 'metadata' and 'expression_matrix' do not match, or the column names of 'expression_matrix' are not cell ids.")
+    stop("Cell ids from `metadata` and `expression_matrix` do not match, or the column names of `expression_matrix` are not cell ids.")
   }
   if (!is.null(sender)) {
     missing_ct <- sender[!(sender %in% metadata$cell_type)]
     if (length(missing_ct) > 0) {
-      stop(paste0("These sender cell types are missing in 'metadata': ", paste(missing_ct, collapse = ", ")))
+      stop(paste0("These sender cell types are missing in `metadata`: ", paste(missing_ct, collapse = ", ")))
     }
   }
   if (!is.null(receiver)) {
     missing_ct <- receiver[!(receiver %in% metadata$cell_type)]
     if (length(missing_ct) > 0) {
-      stop(paste0("These receiver cell types are missing in 'metadata': ", paste(missing_ct, collapse = ", ")))
+      stop(paste0("These receiver cell types are missing in `metadata`: ", paste(missing_ct, collapse = ", ")))
     }
   }
 
@@ -261,26 +274,26 @@ ccc_enrich <- function(expression_matrix, metadata,
 
     results.summary <- results.estimate <- results.error <- results.warning <- results.message <- list()
     for (j in 1L:nrow(chunk)) {
-      target_sender <- chunk$sender[j]
+      sender <- chunk$sender[j]
       ligand <- chunk$ligand[j]
-      target_receiver <- chunk$receiver[j]
+      receiver <- chunk$receiver[j]
       receptor <- chunk$receptor[j]
 
       data_sender_ligand <- copy(metadata)
       data_receiver_receptor <- copy(metadata)
-      data_sender_ligand[, class := ifelse(cell_type == target_sender, "target", "background")]
-      data_receiver_receptor[, class := ifelse(cell_type == target_receiver, "target", "background")]
+      data_sender_ligand[, class := ifelse(cell_type == sender, "target", "background")]
+      data_receiver_receptor[, class := ifelse(cell_type == receiver, "target", "background")]
       
       # Define background cell types (all except the target)
-      background_sender <- setdiff(sender, target_sender)
-      background_receiver <- setdiff(receiver, target_receiver)
+      background_sender <- setdiff(sender, sender)
+      background_receiver <- setdiff(receiver, receiver)
 
       # # Create copies of metadata_subset for target and background
-      # data_target_sender <- metadata_subset[cell_type == target_sender]
-      # data_target_receiver <- metadata_subset[cell_type == target_receiver]
+      # data_target_sender <- metadata_subset[cell_type == sender]
+      # data_target_receiver <- metadata_subset[cell_type == receiver]
       # # For background, include ALL cells from non-target cell types, not just from filtered sender/receiver
-      # data_background_sender <- metadata_subset[cell_type != target_sender]
-      # data_background_receiver <- metadata_subset[cell_type != target_receiver]
+      # data_background_sender <- metadata_subset[cell_type != sender]
+      # data_background_receiver <- metadata_subset[cell_type != receiver]
 
       # Handle single gene or multi-gene ligands and receptors
       ligand_genes <- unlist(strsplit(ligand, "_"))
@@ -289,7 +302,7 @@ ccc_enrich <- function(expression_matrix, metadata,
       # # Check if all genes exist in the expression matrix
       # missing_genes <- setdiff(c(ligand_genes, receptor_genes), rownames(expression_matrix))
       # if (length(missing_genes) > 0) {
-      #   results.error[[paste(target_sender, target_receiver, ligand, receptor, sep = "_")]] <- 
+      #   results.error[[paste(sender, receiver, ligand, receptor, sep = "_")]] <- 
       #     paste("Missing genes in expression matrix:", paste(missing_genes, collapse = ", "))
       #   next
       # }
@@ -336,357 +349,151 @@ ccc_enrich <- function(expression_matrix, metadata,
       data_sender_ligand_1 <- data_sender_ligand[z == 1]
       data_receiver_receptor_1 <- data_receiver_receptor[z == 1]
       
+      # descriptive statistics summary
+      dt.summary.ligand <- compute_group_stats(dt = data_sender_ligand, group_col = "class", prefix = "ligand.")
+      dt.summary.receptor <- compute_group_stats(dt = data_receiver_receptor, group_col = "class", prefix = "receptor.")
+      dt.summary <- merge(dt.summary.ligand, dt.summary.receptor, by = "class")
+      dt.summary[, c("sender", "receiver", "ligand", "receptor") := list(sender, receiver, ligand, receptor)]
+      setcolorder(dt.summary, c("sender", "receiver", "ligand", "receptor", setdiff(names(dt.summary), c("sender", "receiver", "ligand", "receptor"))))
+      results.summary[[length(results.summary) + 1L]] <- dt.summary
       
+      # Define covariates
+      if (is.null(covar_col) && isFALSE(cdr)) {
+        covariates <- "class"
+      } else {
+        covar <- c(covar_col, if (isTRUE(cdr)) "cdr")
+        
+        center_covar(dt = data_sender_ligand_1, covar = covar) -> covariates # The 4 data sets are different. But the column names are the same.
+        center_covar(dt = data_receiver_receptor_1, covar = covar)
+        center_covar(dt = data_sender_ligand, covar = covar)
+        center_covar(dt = data_receiver_receptor, covar = covar)
+        
+        covariates <- c("class", covariates)
+      }
       
+      # Define model formulas
+      fixed_effects <- paste(covariates, collapse = " + ")
+      formula_linear <- as.formula(paste("y ~ 0 +", fixed_effects))
+      formula_logistic <- as.formula(paste("z ~ 0 +", fixed_effects))
+      if (lmm_re) {
+        formula_linear <- as.formula(paste("y ~ 0 +", fixed_effects, "+ (1|id)"))
+      }
+      if (logmm_re) {
+        fixed_formula <- as.formula(paste("z ~ 0 +", fixed_effects))
+        random_formula <- as.formula("~ 1 | id")
+        formula_logistic <- list("fixed" = fixed_formula, "random" = random_formula)
+      }
       
-      
-      
-      
-      
-      
-      
-      
-      # Try to process this pair with error handling
-      tryCatch({
-        # Extract expression for ligand genes in target sender
-        ligand_expr_target <- if (length(ligand_genes) == 1) {
-          expression_matrix[ligand_genes, data_target_sender$cell_id, drop = FALSE]
-        } else {
-          expression_matrix[ligand_genes, data_target_sender$cell_id, drop = FALSE]
-        }
-        
-        # Extract expression for receptor genes in target receiver
-        receptor_expr_target <- if (length(receptor_genes) == 1) {
-          expression_matrix[receptor_genes, data_target_receiver$cell_id, drop = FALSE]
-        } else {
-          expression_matrix[receptor_genes, data_target_receiver$cell_id, drop = FALSE]
-        }
-        
-        # Compute expression values for target cell types
-        ligand_expr_target_value <- compute_expression_value(ligand_expr_target, multi_sub, threshold)
-        receptor_expr_target_value <- compute_expression_value(receptor_expr_target, multi_sub, threshold)
-        
-        # Compute expression rates for filtering
-        compute_expression_rate <- function(data_subset, expr_values) {
-          sapply(unique(data_subset$id), function(uid) {
-            cells_for_id <- data_subset[id == uid, cell_id]
-            mean(expr_values[cells_for_id] > threshold)
-          })
-        }
-        
-        ligand_expression_rates <- compute_expression_rate(data_target_sender, ligand_expr_target_value)
-        receptor_expression_rates <- compute_expression_rate(data_target_receiver, receptor_expr_target_value)
-        
-        # Check if the number of ids with both ligand and receptor expression rate >= min_pct is >= large_n
-        valid_ids <- sum((ligand_expression_rates >= min_pct) & (receptor_expression_rates >= min_pct))
-        if (valid_ids < large_n) {
-          next
-        }
-        
-        # Another filtering step based on total percentage
-        total_pct_ligand <- mean(ligand_expr_target_value > threshold)
-        total_pct_receptor <- mean(receptor_expr_target_value > threshold)
-        if (min(total_pct_ligand, total_pct_receptor) < min_total_pct) {
-          next
-        }
-        
-        # Extract expression for ligand genes in background sender
-        ligand_expr_background <- if (length(ligand_genes) == 1) {
-          expression_matrix[ligand_genes, data_background_sender$cell_id, drop = FALSE]
-        } else {
-          expression_matrix[ligand_genes, data_background_sender$cell_id, drop = FALSE]
-        }
-        
-        # Extract expression for receptor genes in background receiver
-        receptor_expr_background <- if (length(receptor_genes) == 1) {
-          expression_matrix[receptor_genes, data_background_receiver$cell_id, drop = FALSE]
-        } else {
-          expression_matrix[receptor_genes, data_background_receiver$cell_id, drop = FALSE]
-        }
-
-        # Compute expression values for background data
-        ligand_expr_background_value <- compute_expression_value(ligand_expr_background, multi_sub, threshold)
-        receptor_expr_background_value <- compute_expression_value(receptor_expr_background, multi_sub, threshold)
-
-        # Prepare data for model fitting
-        # Target data
-        target_data <- data.table(
-          ligand_expr = ligand_expr_target_value,
-          receptor_expr = receptor_expr_target_value,
-          product = ligand_expr_target_value * receptor_expr_target_value,
-          group = "target",
-          id = data_target_sender$id,  # Using sender's id for simplicity
-          binary = (ligand_expr_target_value * receptor_expr_target_value) > threshold
-        )
-        
-        # Background data
-        background_data <- data.table(
-          ligand_expr = ligand_expr_background_value,
-          receptor_expr = receptor_expr_background_value,
-          product = ligand_expr_background_value * receptor_expr_background_value,
-          group = "background",
-          id = data_background_sender$id,  # Using sender's id for simplicity
-          binary = (ligand_expr_background_value * receptor_expr_background_value) > threshold
-        )
-        
-        # Calculate expression metrics
-        target_mean <- mean(target_data$product)
-        target_sd <- sd(target_data$product)
-        target_n <- nrow(target_data)
-        target_pct_above <- mean(target_data$binary)
-
-        background_mean <- mean(background_data$product)
-        background_sd <- sd(background_data$product)
-        background_n <- nrow(background_data)
-        background_pct_above <- mean(background_data$binary)
-
-        # Calculate fold change
-        fold_change <- if (background_mean > 0) target_mean / background_mean else Inf
-        
-        # Prepare data for ligand and receptor models
-        # Ligand data
-        ligand_data <- data.table(
-          y = c(ligand_expr_target_value, ligand_expr_background_value),
-          z = c(ligand_expr_target_value > threshold, ligand_expr_background_value > threshold),
-          group = c(rep("target", length(ligand_expr_target_value)), rep("background", length(ligand_expr_background_value))),
-          id = c(data_target_sender$id, data_background_sender$id)
-        )
-        
-        # Receptor data
-        receptor_data <- data.table(
-          y = c(receptor_expr_target_value, receptor_expr_background_value),
-          z = c(receptor_expr_target_value > threshold, receptor_expr_background_value > threshold),
-          group = c(rep("target", length(receptor_expr_target_value)), rep("background", length(receptor_expr_background_value))),
-          id = c(data_target_receiver$id, data_background_receiver$id)
-        )
-        
-        # Subset data for linear models (only values above threshold)
-        ligand_data_1 <- ligand_data[z == TRUE]
-        receptor_data_1 <- receptor_data[z == TRUE]
-        
-        # Initialize model fits as NULL
-        fit_l_linear <- fit_l_logistic <- fit_r_linear <- fit_r_logistic <- NULL
-        
-        # Define model formulas
-        formula_linear <- if (isTRUE(lmm_re)) {
-          as.formula("y ~ 0 + group + (1|id)")
-        } else {
-          as.formula("y ~ 0 + group")
-        }
-        
-        formula_logistic <- if (isTRUE(logmm_re)) {
-          list(
-            "fixed" = as.formula("z ~ 0 + group"),
-            "random" = as.formula("~ 1 | id")
-          )
-        } else {
-          as.formula("z ~ 0 + group")
-        }
-        
-        # Function to fit models with error handling
-        fit_model <- function(part, data, formula, name) {
-          stopifnot(part == "linear" || part == "logistic")
-          warnings. <- list()
-          messages. <- list()
-          fit <- tryCatch(
-            withCallingHandlers(
-              {
-                if (part == "linear") {
-                  if (nrow(data) == 0) {
-                    stop("No data above threshold for fitting a linear model.")
+      fit_model <- function(part, data, formula, name) {
+        stopifnot(part == "linear" || part == "logistic")
+        warnings. <- list()
+        messages. <- list()
+        fit <- tryCatch(
+          withCallingHandlers(
+            {
+              if (part == "linear") {
+                cond <- detect_all_zeros2(dt = data, id_col = "id", id = unique_ids)
+                if (cond) {
+                  stop("Too few cells expressing the ligand/receptor gene for fitting a linear model.")
+                } else {
+                  if (isTRUE(lmm_re)) {
+                    lmer(formula, data = data, control = control_lmm)
                   } else {
-                    if (isTRUE(lmm_re)) {
-                      lme4::lmer(formula, data = data)
-                    } else {
-                      lm(formula, data = data)
-                    }
-                  }
-                } else if (part == "logistic") {
-                  if (var(data$z) == 0) {
-                    stop("No variation in binary outcome for logistic model.")
-                  } else if (isTRUE(sep_detection) && detect_re_separation(dt = data, z_col = "z", id_col = "id", num_ids = num_ids, sep_prop = sep_prop, sep_n = sep_n)) {
-                    stop("Complete or quasi-complete separation detected in more than the threshold number of samples.")
-                  } else {
-                    if (isTRUE(logmm_re)) {
-                      GLMMadaptive::mixed_model(
-                        fixed = formula$fixed, random = formula$random,
-                        family = binomial(), data = data
-                      )
-                    } else {
-                      glm(formula, family = binomial(), data = data)
-                    }
+                    lm(formula, data = data)
                   }
                 }
-              },
-              warning = function(w) {
-                warnings.[[length(warnings.) + 1L]] <<- w$message
-                invokeRestart("muffleWarning")
-              },
-              message = function(m) {
-                messages.[[length(messages.) + 1L]] <<- m$message
-                invokeRestart("muffleMessage")
+              } else if (part == "logistic") {
+                cond <- isTRUE(sep_detection) && detect_re_separation2(dt = data, z_col = "z", id_col = "id", num_ids = num_ids, sep_sample_prop = sep_sample_prop, sep_sample_n = sep_sample_n)
+                if (cond) {
+                  stop("Complete or Quasi-complete separation detected.")
+                } else {
+                  if (isTRUE(logmm_re)) {
+                    mixed_model(fixed = formula$fixed, random = formula$random, family = binomial(), data = data, control = control_logmm)
+                  } else {
+                    glm(formula, family = binomial(), data = data, control = control_logm)
+                  }
+                }
               }
-            ),
-            error = function(e) {
-              results.warning[[paste(target_sender, target_receiver, ligand, receptor, sep = "_")]] <<- 
-                paste("Error fitting", name, "model:", conditionMessage(e))
-              return(NULL)
+            },
+            warning = function(w) {
+              warnings.[[length(warnings.) + 1L]] <<- w$message
+              invokeRestart("muffleWarning")
+            },
+            message = function(m) {
+              messages.[[length(messages.) + 1L]] <<- m$message
+              invokeRestart("muffleMessage")
             }
-          )
-          fit
+          ),
+          error = function(e) {
+            error_messages[[name]] <<- e$message
+            return(NULL)
+          }
+        )
+        if (length(warnings.) > 0) {
+          warning_messages[[name]] <<- warnings.
         }
-        
-        # Fit models for ligand and receptor
-        fit_l_linear <- fit_model(part = "linear", data = ligand_data_1, formula = formula_linear, name = "ligand.linear")
-        fit_r_linear <- fit_model(part = "linear", data = receptor_data_1, formula = formula_linear, name = "receptor.linear")
-        fit_l_logistic <- fit_model(part = "logistic", data = ligand_data, formula = formula_logistic, name = "ligand.logistic")
-        fit_r_logistic <- fit_model(part = "logistic", data = receptor_data, formula = formula_logistic, name = "receptor.logistic")
-        
-        # Perform statistical tests using ccc_test_enrich
-        test_results <- ccc_test_enrich(
-          fit_ligand_linear = fit_l_linear,
-          fit_ligand_logistic = fit_l_logistic,
-          fit_receptor_linear = fit_r_linear,
-          fit_receptor_logistic = fit_r_logistic,
-          lmm_re = lmm_re,
-          logmm_re = logmm_re,
-          sandwich = sandwich,
-          sender = target_sender,
-          receiver = target_receiver,
-          ligand = ligand,
-          receptor = receptor
-        )
-        
-        # Extract p-values from test results
-        p_value_linear <- if ("pvalue_linear" %in% names(test_results)) test_results$pvalue_linear else NA
-        p_value_logistic <- if ("pvalue_logistic" %in% names(test_results)) test_results$pvalue_logistic else NA
-        p_value_stouffer <- if ("pvalue_stouffer" %in% names(test_results)) test_results$pvalue_stouffer else NA
-        p_value_fisher <- if ("pvalue_fisher" %in% names(test_results)) test_results$pvalue_fisher else NA
-        
-        # If we couldn't fit models, fall back to simple Z-test
-        if (is.na(p_value_linear) && is.na(p_value_logistic)) {
-          # Perform one-sided Z-test (target > background)
-          z_score <- (target_mean - background_mean) / 
-            sqrt((target_sd^2 / target_n) + (background_sd^2 / background_n))
-          p_value_linear <- pnorm(z_score, lower.tail = FALSE)
-          
-          # Fisher's exact test for expression rates
-          fisher_table <- matrix(
-            c(
-              sum(target_data$binary), sum(!target_data$binary),
-              sum(background_data$binary), sum(!background_data$binary)
-            ),
-            nrow = 2
-          )
-          p_value_logistic <- fisher.test(fisher_table, alternative = "greater")$p.value
-          
-          # Combine p-values using different methods
-          # Stouffer's method
-          z_values <- c(qnorm(p_value_linear, lower.tail = FALSE), qnorm(p_value_logistic, lower.tail = FALSE))
-          p_value_stouffer <- pnorm(sum(z_values) / sqrt(length(z_values)), lower.tail = FALSE)
-          
-          # Fisher's method
-          p_value_fisher <- pchisq(-2 * sum(log(c(p_value_linear, p_value_logistic))), df = 4, lower.tail = FALSE)
+        if (length(messages.) > 0) {
+          the_messages[[name]] <<- messages.
         }
-
-        # Store summary statistics
-        results.summary[[paste(target_sender, target_receiver, ligand, receptor, sep = "_")]] <- data.table(
-          sender = target_sender,
-          receiver = target_receiver,
-          ligand = ligand,
-          receptor = receptor,
-          target_mean = target_mean,
-          target_sd = target_sd,
-          target_n = target_n,
-          target_pct_above = target_pct_above,
-          background_mean = background_mean,
-          background_sd = background_sd,
-          background_n = background_n,
-          background_pct_above = background_pct_above
-        )
-
-        # Store test results
-        results.test[[paste(target_sender, target_receiver, ligand, receptor, sep = "_")]] <- data.table(
-          sender = target_sender,
-          receiver = target_receiver,
-          ligand = ligand,
-          receptor = receptor,
-          fold_change = fold_change,
-          p_value_linear = p_value_linear,
-          p_value_logistic = p_value_logistic,
-          p_value_stouffer = p_value_stouffer,
-          p_value_fisher = p_value_fisher,
-          effect_size_linear = if ("effect_size_linear" %in% names(test_results)) test_results$effect_size_linear else NA,
-          effect_size_logistic = if ("effect_size_logistic" %in% names(test_results)) test_results$effect_size_logistic else NA,
-          effect_size_hurdle = if ("effect_size_hurdle" %in% names(test_results)) test_results$effect_size_hurdle else NA
-        )
-      },
-      error = function(e) {
-        results.error[[paste(target_sender, target_receiver, ligand, receptor, sep = "_")]] <<- conditionMessage(e)
-      },
-      warning = function(w) {
-        results.warning[[paste(target_sender, target_receiver, ligand, receptor, sep = "_")]] <<- conditionMessage(w)
-      },
-      message = function(m) {
-        results.message[[paste(target_sender, target_receiver, ligand, receptor, sep = "_")]] <<- conditionMessage(m)
-      })
+        fit
+      }
+      
+      warning_messages <- the_messages <- error_messages <- list()
+      
+      fit.l.linear <- fit_model(part = "linear", data = data_sender_ligand_1, formula = formula_linear, name = "ligand.linear")
+      fit.r.linear <- fit_model(part = "linear", data = data_receiver_receptor_1, formula = formula_linear, name = "receptor.linear")
+      fit.l.logistic <- fit_model(part = "logistic", data = data_sender_ligand, formula = formula_logistic, name = "ligand.logistic")
+      fit.r.logistic <- fit_model(part = "logistic", data = data_receiver_receptor, formula = formula_logistic, name = "receptor.logistic")
+      
+      if (length(warning_messages) > 0) {
+        results.warning[[paste(sender, receiver, ligand, receptor, sep = "-")]] <- warning_messages
+      }
+      if (length(the_messages) > 0) {
+        results.message[[paste(sender, receiver, ligand, receptor, sep = "-")]] <- the_messages
+      }
+      if (length(error_messages) > 0) {
+        results.error[[paste(sender, receiver, ligand, receptor, sep = "-")]] <- error_messages
+      }
+      
+      results.estimate[[length(results.estimate) + 1L]] <- ccc_estimate(
+        fit.l.linear = fit.l.linear, fit.l.logistic = fit.l.logistic,
+        fit.r.linear = fit.r.linear, fit.r.logistic = fit.r.logistic,
+        unique_levels = unique_levels, lmm_re = lmm_re, logmm_re = logmm_re,
+        sandwich = sandwich,
+        sender = sender, receiver = receiver,
+        ligand = ligand, receptor = receptor
+      )
     }
-
-    if (verbose) p()
-
+    if (verbose) {
+      p()
+    }
     list(
-      summary = results.summary,
-      test = results.test,
-      error = results.error,
-      warning = results.warning,
-      message = results.message
+      descriptive_stats = rbindlist(results.summary),
+      estimate_results = rbindlist(results.estimate, fill = TRUE),
+      errors = results.error,
+      warnings = results.warning,
+      messages = results.message
     )
   }
-
-  # Run analysis in parallel or sequentially
-  if (requireNamespace("future.apply", quietly = TRUE)) {
-    results_list <- future.apply::future_lapply(i_s, analyze_chunk)
-  } else {
-    results_list <- lapply(i_s, analyze_chunk)
-  }
-
-  # Combine results
-  summary_list <- lapply(results_list, function(x) x$summary)
-  test_list <- lapply(results_list, function(x) x$test)
-  error_list <- lapply(results_list, function(x) x$error)
-  warning_list <- lapply(results_list, function(x) x$warning)
-  message_list <- lapply(results_list, function(x) x$message)
-
-  summary_dt <- rbindlist(unlist(summary_list, recursive = FALSE), fill = TRUE)
-  test_dt <- rbindlist(unlist(test_list, recursive = FALSE), fill = TRUE)
-  error_list <- unlist(error_list, recursive = FALSE)
-  warning_list <- unlist(warning_list, recursive = FALSE)
-  message_list <- unlist(message_list, recursive = FALSE)
-
-  # Adjust p-values
-  if (cell_type_padj) {
-    # Adjust p-values for each sender-receiver pair
-    test_dt[, c("padj_linear", "padj_logistic", "padj_stouffer", "padj_fisher") := 
-              .(p.adjust(p_value_linear, method = padj_method),
-                p.adjust(p_value_logistic, method = padj_method),
-                p.adjust(p_value_stouffer, method = padj_method),
-                p.adjust(p_value_fisher, method = padj_method)),
-            by = .(sender, receiver)]
-  } else {
-    # Adjust p-values globally
-    test_dt[, c("padj_linear", "padj_logistic", "padj_stouffer", "padj_fisher") := 
-              .(p.adjust(p_value_linear, method = padj_method),
-                p.adjust(p_value_logistic, method = padj_method),
-                p.adjust(p_value_stouffer, method = padj_method),
-                p.adjust(p_value_fisher, method = padj_method))]
-  }
-
-  # Return results
+  setDTthreads(threads = 1)
+  results_obj <- future_lapply(i_s, FUN = run_analysis, future.seed = TRUE, future.chunk.size = chunk_size)
+  setDTthreads(threads = old_nthreads)
+  
+  list.descriptive_stats <- lapply(results_obj, \(x) x$descriptive_stats)
+  list.estimate_results <- lapply(results_obj, \(x) x$estimate_results)
+  list.errors <- lapply(results_obj, \(x) x$errors)
+  list.warnings <- lapply(results_obj, \(x) x$warnings)
+  list.messages <- lapply(results_obj, \(x) x$messages)
+  
+  dt.estimate.all <- rbindlist(list.estimate_results, fill = TRUE)
+  
   list(
-    summary = summary_dt,
-    test = test_dt,
-    errors = error_list,
-    warnings = warning_list,
-    messages = message_list
-  )
+    func = as.character(match.call()[[1]]),
+    summary = as.data.frame(rbindlist(list.descriptive_stats)),
+    estimate = as.data.frame(dt.estimate.all),
+    errors = do.call(c, list.errors),
+    warnings = do.call(c, list.warnings),
+    messages = do.call(c, list.messages)
+  )  
 }
+    

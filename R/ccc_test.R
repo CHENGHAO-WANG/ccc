@@ -3,10 +3,14 @@
 #' Perform Wald tests on the product of ligand expression levels in sender and receptor expression levels in receiver for differential or enriched cell-cell communication.
 #' 
 #' 
-
+#' @param padj_method a character string for multiple testing correction method. This is passed to [stats::p.adjust()]. Defaults to "BH".
+#' @param cell_type_padj logical scalar. If `TRUE` (the default), adjust p-values for each sender-receiver pair.
+#' @param chunk_size integer scalar. The number of communication pairs (each defined by a distinct combination of sender, receiver, ligand, and receptor) per chunk. Passed to the `future.chunk.size` argument of [future.apply::future_mapply()]. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.
+#' 
 ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
                      c_linear = 0, c_logisitc = 0, c_hurdel = 0,
-                     verbose = TRUE, padj_method = "BH", cell_type_padj = TRUE) {
+                     verbose = TRUE, padj_method = "BH", cell_type_padj = TRUE,
+                     chunk_size = 10) {
   # verbose
   assertthat::assert_that(assertthat::is.flag(verbose))
   
@@ -23,6 +27,7 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
     }
   }
   
+  assertthat::assert_that(assertthat::is.flag(cell_type_padj))
   padj_method <- match.arg(padj_method, stats::p.adjust.methods)
   
   if (!is.null(test_type)) {
@@ -39,13 +44,13 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
     if (is.vector(contrast)) {
       contrast <- matrix(contrast, nrow = 1L, dimnames = list(NULL, names(contrast)))
     } else if (!is.matrix(contrast)) {
-      stop("'contrast' must be either a named vector or a matrix with column names.")
+      stop("`contrast` must be either a named vector or a matrix with column names.")
     }
     if (is.null(colnames(contrast))) {
-      stop("'contrast' must be either a named vector or a matrix with column names.")
+      stop("`contrast` must be either a named vector or a matrix with column names.")
     }
     if (qr(contrast)$rank < nrow(contrast)) {
-      stop("'contrast' must be full row rank")
+      stop("`contrast` must be full row rank")
     }
     if (is.null(test_type)) {
       test_type <- "chisq"
@@ -291,12 +296,12 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
     dt.test
   }
   
-  mapply(FUN = wald.test,
+  future_mapply(FUN = wald.test,
          coef_l_lm = dt.test.all$coef_l_lm, coef_r_lm = dt.test.all$coef_r_lm,
          coef_l_logm = dt.test.all$coef_l_logm, coef_r_logm = dt.test.all$coef_r_logm,
          vcov_l_lm = dt.test.all$vcov_l_lm, vcov_r_lm = dt.test.all$vcov_r_lm,
          vcov_l_logm = dt.test.all$vcov_l_logm, vcov_r_logm = dt.test.all$vcov_r_logm,
-         SIMPLIFY = FALSE
+         SIMPLIFY = FALSE, future.chunk.size = chunk_size
   ) -> test.list
   
   test.results <- rbindlist(test.list)

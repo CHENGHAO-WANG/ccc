@@ -35,8 +35,6 @@
 #' @param sep_detection logical scalar. If `TRUE` (the default), detect complete or quasi-complete separation in logistic models.
 #' @param sep_prop numeric scalar. For each ligand/receptor gene, if it is expressed above/below `threshold` in all cells of more than a `sep_prop` fraction of individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.
 #' @param sep_n numeric scalar. For each ligand/receptor gene, if it is expressed above/below `threshold` in all cells of more than `sep_n` individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.
-#' @param padj_method a character string for multiple testing correction method. This is passed to [stats::p.adjust]. Defaults to "BH".
-#' @param cell_type_padj logical scalar. If `TRUE` (the default), adjust p-values for each sender-receiver pair.
 #' @param control_logm control parameters for optimization in [stats::glm].
 #' @param control_lmm control parameters for optimization in [lme4::lmer].
 #' @param control_logmm control parameters for optimization in [GLMMadaptive::mixed_model].
@@ -70,7 +68,7 @@
 #'  }
 #'
 #' @import data.table
-#' @importFrom future.apply future_lapply
+#' @importFrom future.apply future_lapply future_mapply
 #' @importFrom lme4 lmer fixef
 #' @importFrom GLMMadaptive mixed_model marginal_coefs
 #' @import progressr
@@ -109,19 +107,18 @@
 #'
 #' @export
 
-ccc_diff <- function(expression_matrix, metadata, contrast,
+ccc_diff <- function(expression_matrix, metadata,
                      cell_id_col = "cell_id", cell_type_col = "cell_type",
                      group_col = "group", covar_col = NULL, cdr = TRUE,
                      id_col = "id", lmm_re = TRUE, logmm_re = TRUE,
                      sender = NULL, receiver = NULL,
                      lr = "omnipathr", multi_sub = "minimum",
-                     sandwich = FALSE, verbose = TRUE, min_cell = 10,
+                     verbose = TRUE, min_cell = 10,
                      min_pct = 0.01, large_n = 2, min_total_pct = 0,
                      threshold = 0, sep_detection = TRUE, sep_prop = 0, sep_n = 0,
-                     padj_method = "BH", cell_type_padj = TRUE,
                      control_logm = list(),
                      control_lmm = lme4::lmerControl(), control_logmm = list(),
-                     chunk_size = 10) {
+                     chunk_size = 10, sandwich = FALSE) {
   old_nthreads <- getDTthreads()
   on.exit(setDTthreads(old_nthreads), add = TRUE)
 
@@ -145,9 +142,8 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
   assertthat::assert_that(assertthat::is.flag(logmm_re))
   assertthat::assert_that(assertthat::is.flag(sandwich))
   assertthat::assert_that(assertthat::is.flag(sep_detection))
-  assertthat::assert_that(assertthat::is.flag(cell_type_padj))
 
-  required_args <- c("expression_matrix", "metadata", "contrast")
+  required_args <- c("expression_matrix", "metadata")
   passed_args <- names(match.call())[-1]
   missing_args <- setdiff(required_args, passed_args)
   if (length(missing_args) > 0) {
@@ -155,7 +151,7 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
   }
 
   if (is.null(rownames(expression_matrix)) || is.null(colnames(expression_matrix))) {
-    stop("'expression_matrix' must have rownames (genes) and colnames (cell ids).")
+    stop("`expression_matrix` must have rownames (genes) and colnames (cell ids).")
   }
   # contrast <- contrast[, colSums(abs(contrast) > 0)]
   if (any(is.na(expression_matrix))) {
@@ -167,64 +163,68 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
 
   multi_sub <- match.arg(multi_sub, choices = c("minimum", "arithmetic_mean", "geometric_mean", "min_avg_gene", "min_rate_gene"))
 
-  err_msg <- " in 'covar_col'. Please use a different argument or rename it."
+  err_msg <- " in `covar_col`. Please use a different argument or rename it."
   if ("id" %in% covar_col) {
     stop(paste0("\"id\"", err_msg))
   }
   if ("group" %in% covar_col) {
     stop(paste0("\"group\"", err_msg))
   }
+  if ("cell_id" %in% covar_col) {
+    stop(paste0("\"cell_id\"", err_msg))
+  }
+  if ("cell_type" %in% covar_col) {
+    stop(paste0("\"cell_type\"", err_msg))
+  }
   if ("cdr" %in% covar_col && isTRUE(cdr)) {
     stop(paste0("\"cdr\"", err_msg))
   }
 
   if ("y" %in% colnames(metadata)) {
-    stop("\"y\" in column names of 'metadata'. Please rename it.")
+    stop("\"y\" in column names of `metadata`. Please rename it.")
   }
   if ("z" %in% colnames(metadata)) {
-    stop("\"z\" in column names of 'metadata'. Please rename it.")
+    stop("\"z\" in column names of `metadata`. Please rename it.")
   }
 
   covar_exists <- covar_col %in% colnames(metadata)
   if (!is.null(covar_col) && !all(covar_exists)) {
-    stop(paste0("The following columns specified in 'covar_col' do not exist in 'metadata': ", paste(covar_col[!covar_exists], collapse = ", ")))
+    stop(paste0("The following columns specified in `covar_col` do not exist in `metadata`: ", paste(covar_col[!covar_exists], collapse = ", ")))
   }
   if (isFALSE(group_col %in% colnames(metadata))) {
-    stop(paste0("'group_col' \"", group_col, "\" does not exist in 'metadata'."))
+    stop(paste0("`group_col` \"", group_col, "\" does not exist in `metadata`."))
   }
   if (isFALSE(cell_id_col %in% colnames(metadata))) {
-    stop(paste0("'cell_id_col' \"", cell_id_col, "\" does not exist in 'metadata'."))
+    stop(paste0("`cell_id_col` \"", cell_id_col, "\" does not exist in `metadata`."))
   }
   if (isFALSE(cell_type_col %in% colnames(metadata))) {
-    stop(paste0("'cell_type_col' \"", cell_type_col, "\" does not exist in 'metadata'."))
+    stop(paste0("`cell_type_col` \"", cell_type_col, "\" does not exist in `metadata`."))
   }
 
-  if (!all(colnames(contrast) %in% unique(metadata[[group_col]]))) {
-    stop(paste0("'contrast' contains group levels that are not present in the \"", group_col, "\" column of 'metadata'."))
-  }
+  # if (!all(colnames(contrast) %in% unique(metadata[[group_col]]))) {
+  #   stop(paste0("`contrast` contains group levels that are not present in the \"", group_col, "\" column of `metadata`."))
+  # }
   # metadata <- metadata[metadata[[group_col]] %in% colnames(contrast), ]
 
   if (isTRUE(lmm_re) || isTRUE(logmm_re)) {
     if (is.null(id_col)) {
-      stop("'id_col' is not specified, while 'lmm_re' or 'logmm_re' is TRUE")
+      stop("`id_col` is not specified, while `lmm_re` or `logmm_re` is TRUE")
     }
     if (isFALSE(id_col %in% colnames(metadata))) {
-      stop(paste0("'id_col' \"", id_col, "\" does not exist in 'metadata'."))
+      stop(paste0("`id_col` \"", id_col, "\" does not exist in `metadata`."))
     }
   }
   if (isFALSE(lmm_re) && isFALSE(logmm_re) && !is.null(id_col)) {
-    message("'id_col' is not NULL. This input will be ignored, because 'lmm_re' and 'logmm_re' are FALSE. To suppress this message, set 'id_col = NULL'.")
+    message("`id_col` is not NULL. This input will be ignored, because `lmm_re` and `logmm_re` are FALSE. To suppress this message, set `id_col = NULL`.")
     id_col <- NULL
   }
 
   if (is.null(sender)) {
-    message("'sender' is not specified. All cell types will be considered as potential senders in the analysis.")
+    message("`sender` is not specified. All cell types will be considered as potential senders in the analysis.")
   }
   if (is.null(receiver)) {
-    message("'receiver' is not specified. All cell types will be considered as potential receivers in the analysis.")
+    message("`receiver` is not specified. All cell types will be considered as potential receivers in the analysis.")
   }
-
-  padj_method <- match.arg(padj_method, stats::p.adjust.methods)
 
   metadata <- as.data.table(metadata)
   metadata <- rename_metadata(
@@ -237,27 +237,27 @@ ccc_diff <- function(expression_matrix, metadata, contrast,
 
   if (isTRUE(sep_detection)) {
     if (sep_prop < 0 || sep_prop > 1) {
-      stop("'sep_prop' must be between 0 and 1 (inclusive).")
+      stop("`sep_prop` must be between 0 and 1 (inclusive).")
     }
     if (sep_n < 0 || sep_n > num_ids) {
-      stop("'sep_n' must be between 0 and number of samples (inclusive).")
+      stop("`sep_n` must be between 0 and number of samples (inclusive).")
     }
   }
 
   #####################################################
   if (length(setdiff(metadata$cell_id, colnames(expression_matrix))) > 0) {
-    stop("Cell ids from 'metadata' and 'expression_matrix' do not match, or the column names of 'expression_matrix' are not cell ids.")
+    stop("Cell ids from `metadata` and `expression_matrix` do not match, or the column names of `expression_matrix` are not cell ids.")
   }
   if (!is.null(sender)) {
     missing_ct <- sender[!(sender %in% metadata$cell_type)]
     if (length(missing_ct) > 0) {
-      stop(paste0("These sender cell types are missing in 'metadata': ", paste(missing_ct, collapse = ", ")))
+      stop(paste0("These sender cell types are missing in `metadata`: ", paste(missing_ct, collapse = ", ")))
     }
   }
   if (!is.null(receiver)) {
     missing_ct <- receiver[!(receiver %in% metadata$cell_type)]
     if (length(missing_ct) > 0) {
-      stop(paste0("These receiver cell types are missing in 'metadata': ", paste(missing_ct, collapse = ", ")))
+      stop(paste0("These receiver cell types are missing in `metadata`: ", paste(missing_ct, collapse = ", ")))
     }
   }
 
