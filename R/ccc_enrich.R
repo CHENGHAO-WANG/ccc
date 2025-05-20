@@ -260,223 +260,233 @@ ccc_enrich <- function(expression_matrix, metadata,
   unique_levels <- c("target", "background")
   
   setDT(pairs4analysis)
-  npairs <- nrow(pairs4analysis)
+  # npairs <- nrow(pairs4analysis)
   unique_ids <- unique(metadata[, id])
-  i_s <- seq(1L, nrow(pairs4analysis), by = chunk_size)
+  # i_s <- seq(1L, nrow(pairs4analysis), by = chunk_size)
+  j_s <- seq_len(nrow(pairs4analysis))
+  names(j_s) <- paste(pairs4analysis$sender, pairs4analysis$receiver, pairs4analysis$ligand, pairs4analysis$receptor, sep = "-")
   if (verbose) {
-    p <- progressr::progressor(along = i_s)
+    p <- progressr::progressor(along = j_s)
     # message("Starting enrichment analysis...")
   }
 
   # Function to analyze a chunk of pairs
-  run_analysis <- function(i) {
-    chunk <- pairs4analysis[i:min(i + chunk_size - 1L, npairs), ]
+  run_analysis <- function(j) {
+    # chunk <- pairs4analysis[i:min(i + chunk_size - 1L, npairs), ]
 
-    results.summary <- results.estimate <- results.error <- results.warning <- results.message <- list()
-    for (j in 1L:nrow(chunk)) {
-      sender <- chunk$sender[j]
-      ligand <- chunk$ligand[j]
-      receiver <- chunk$receiver[j]
-      receptor <- chunk$receptor[j]
-
-      data_sender_ligand <- copy(metadata)
-      data_receiver_receptor <- copy(metadata)
-      data_sender_ligand[, class := ifelse(cell_type == sender, "target", "background")]
-      data_receiver_receptor[, class := ifelse(cell_type == receiver, "target", "background")]
+    # results.summary <- results.estimate <- results.error <- results.warning <- results.message <- list()
+    ###
+    sender <- pairs4analysis$sender[j]
+    ligand <- pairs4analysis$ligand[j]
+    receiver <- pairs4analysis$receiver[j]
+    receptor <- pairs4analysis$receptor[j]
+    
+    data_sender_ligand <- copy(metadata)
+    data_receiver_receptor <- copy(metadata)
+    data_sender_ligand[, class := ifelse(cell_type == sender, "target", "background")]
+    data_receiver_receptor[, class := ifelse(cell_type == receiver, "target", "background")]
+    
+    # Define background cell types (all except the target)
+    # background_sender <- setdiff(sender, sender)
+    # background_receiver <- setdiff(receiver, receiver)
+    
+    # # Create copies of metadata_subset for target and background
+    # data_target_sender <- metadata_subset[cell_type == sender]
+    # data_target_receiver <- metadata_subset[cell_type == receiver]
+    # # For background, include ALL cells from non-target cell types, not just from filtered sender/receiver
+    # data_background_sender <- metadata_subset[cell_type != sender]
+    # data_background_receiver <- metadata_subset[cell_type != receiver]
+    
+    # Handle single gene or multi-gene ligands and receptors
+    ligand_genes <- unlist(strsplit(ligand, "_"))
+    receptor_genes <- unlist(strsplit(receptor, "_"))
+    
+    # # Check if all genes exist in the expression matrix
+    # missing_genes <- setdiff(c(ligand_genes, receptor_genes), rownames(expression_matrix))
+    # if (length(missing_genes) > 0) {
+    #   results.error[[paste(sender, receiver, ligand, receptor, sep = "_")]] <- 
+    #     paste("Missing genes in expression matrix:", paste(missing_genes, collapse = ", "))
+    #   next
+    # }
+    existing_ligand_genes <- intersect(ligand_genes, rownames(expression_matrix))
+    existing_receptor_genes <- intersect(receptor_genes, rownames(expression_matrix))
+    if (length(existing_ligand_genes) < length(ligand_genes) || length(existing_receptor_genes) < length(receptor_genes)) {
+      # next
+      return(NULL)
+    }
+    ligand_expr_values <- expression_matrix[ligand_genes, data_sender_ligand$cell_id, drop = TRUE]
+    receptor_expr_values <- expression_matrix[receptor_genes, data_receiver_receptor$cell_id, drop = TRUE]
+    
+    data_sender_ligand[, y := compute_expression_value(ligand_expr_values, multi_sub, threshold)]
+    data_receiver_receptor[, y := compute_expression_value(receptor_expr_values, multi_sub, threshold)]
+    
+    # Compute expression rates
+    compute_expression_rate <- function(data_copy) {
+      sapply(unique_ids, function(uid) {
+        mean(data_copy[id == uid & class == "target", y] > threshold)
+      })
+    }
+    
+    ligand_expression_rates <- compute_expression_rate(data_sender_ligand)
+    receptor_expression_rates <- compute_expression_rate(data_receiver_receptor)
+    
+    # Check if the number of ids with both ligand and receptor expression rate >= min_pct is >= large_n
+    valid_ids <- sum((ligand_expression_rates >= min_pct) & (receptor_expression_rates >= min_pct))
+    if (valid_ids < large_n) {
+      # next
+      return(NULL)
+    }
+    
+    # Another filtering step based on total percentage
+    total_pct_ligand <- data_sender_ligand[class == "target", mean(y > threshold)]
+    total_pct_receptor <- data_receiver_receptor[class == "target", mean(y > threshold)]
+    
+    if (min(total_pct_ligand, total_pct_receptor) < min_total_pct) {
+      # next
+      return(NULL)
+    }
+    
+    # Add indicator column
+    data_sender_ligand[, z := ifelse(y > threshold, 1, 0)]
+    data_receiver_receptor[, z := ifelse(y > threshold, 1, 0)]
+    
+    # Subset data
+    data_sender_ligand_1 <- data_sender_ligand[z == 1]
+    data_receiver_receptor_1 <- data_receiver_receptor[z == 1]
+    
+    # descriptive statistics summary
+    dt.summary.ligand <- compute_group_stats(dt = data_sender_ligand, group_col = "class", prefix = "ligand.")
+    dt.summary.receptor <- compute_group_stats(dt = data_receiver_receptor, group_col = "class", prefix = "receptor.")
+    dt.summary <- merge(dt.summary.ligand, dt.summary.receptor, by = "class")
+    dt.summary[, c("sender", "receiver", "ligand", "receptor") := list(sender, receiver, ligand, receptor)]
+    setcolorder(dt.summary, c("sender", "receiver", "ligand", "receptor", setdiff(names(dt.summary), c("sender", "receiver", "ligand", "receptor"))))
+    # results.summary[[length(results.summary) + 1L]] <- dt.summary
+    
+    # Define covariates
+    if (is.null(covar_col) && isFALSE(cdr)) {
+      covariates <- "class"
+    } else {
+      covar <- c(covar_col, if (isTRUE(cdr)) "cdr")
       
-      # Define background cell types (all except the target)
-      background_sender <- setdiff(sender, sender)
-      background_receiver <- setdiff(receiver, receiver)
-
-      # # Create copies of metadata_subset for target and background
-      # data_target_sender <- metadata_subset[cell_type == sender]
-      # data_target_receiver <- metadata_subset[cell_type == receiver]
-      # # For background, include ALL cells from non-target cell types, not just from filtered sender/receiver
-      # data_background_sender <- metadata_subset[cell_type != sender]
-      # data_background_receiver <- metadata_subset[cell_type != receiver]
-
-      # Handle single gene or multi-gene ligands and receptors
-      ligand_genes <- unlist(strsplit(ligand, "_"))
-      receptor_genes <- unlist(strsplit(receptor, "_"))
-
-      # # Check if all genes exist in the expression matrix
-      # missing_genes <- setdiff(c(ligand_genes, receptor_genes), rownames(expression_matrix))
-      # if (length(missing_genes) > 0) {
-      #   results.error[[paste(sender, receiver, ligand, receptor, sep = "_")]] <- 
-      #     paste("Missing genes in expression matrix:", paste(missing_genes, collapse = ", "))
-      #   next
-      # }
-      existing_ligand_genes <- intersect(ligand_genes, rownames(expression_matrix))
-      existing_receptor_genes <- intersect(receptor_genes, rownames(expression_matrix))
-      if (length(existing_ligand_genes) < length(ligand_genes) || length(existing_receptor_genes) < length(receptor_genes)) {
-        next
-      }
-      ligand_expr_values <- expression_matrix[ligand_genes, data_sender_ligand$cell_id, drop = TRUE]
-      receptor_expr_values <- expression_matrix[receptor_genes, data_receiver_receptor$cell_id, drop = TRUE]
+      center_covar(dt = data_sender_ligand_1, covar = covar) -> covariates # The 4 data sets are different. But the column names are the same.
+      center_covar(dt = data_receiver_receptor_1, covar = covar)
+      center_covar(dt = data_sender_ligand, covar = covar)
+      center_covar(dt = data_receiver_receptor, covar = covar)
       
-      data_sender_ligand[, y := compute_expression_value(ligand_expr_values, multi_sub, threshold)]
-      data_receiver_receptor[, y := compute_expression_value(receptor_expr_values, multi_sub, threshold)]
-      
-      # Compute expression rates
-      compute_expression_rate <- function(data_copy) {
-        sapply(unique_ids, function(uid) {
-          mean(data_copy[id == uid & class == "target", y] > threshold)
-        })
-      }
-      
-      ligand_expression_rates <- compute_expression_rate(data_sender_ligand)
-      receptor_expression_rates <- compute_expression_rate(data_receiver_receptor)
-      
-      # Check if the number of ids with both ligand and receptor expression rate >= min_pct is >= large_n
-      valid_ids <- sum((ligand_expression_rates >= min_pct) & (receptor_expression_rates >= min_pct))
-      if (valid_ids < large_n) {
-        next
-      }
-      
-      # Another filtering step based on total percentage
-      total_pct_ligand <- data_sender_ligand[class == "target", mean(y > threshold)]
-      total_pct_receptor <- data_receiver_receptor[class == "target", mean(y > threshold)]
-      
-      if (min(total_pct_ligand, total_pct_receptor) < min_total_pct) {
-        next
-      }
-      
-      # Add indicator column
-      data_sender_ligand[, z := ifelse(y > threshold, 1, 0)]
-      data_receiver_receptor[, z := ifelse(y > threshold, 1, 0)]
-      
-      # Subset data
-      data_sender_ligand_1 <- data_sender_ligand[z == 1]
-      data_receiver_receptor_1 <- data_receiver_receptor[z == 1]
-      
-      # descriptive statistics summary
-      dt.summary.ligand <- compute_group_stats(dt = data_sender_ligand, group_col = "class", prefix = "ligand.")
-      dt.summary.receptor <- compute_group_stats(dt = data_receiver_receptor, group_col = "class", prefix = "receptor.")
-      dt.summary <- merge(dt.summary.ligand, dt.summary.receptor, by = "class")
-      dt.summary[, c("sender", "receiver", "ligand", "receptor") := list(sender, receiver, ligand, receptor)]
-      setcolorder(dt.summary, c("sender", "receiver", "ligand", "receptor", setdiff(names(dt.summary), c("sender", "receiver", "ligand", "receptor"))))
-      results.summary[[length(results.summary) + 1L]] <- dt.summary
-      
-      # Define covariates
-      if (is.null(covar_col) && isFALSE(cdr)) {
-        covariates <- "class"
-      } else {
-        covar <- c(covar_col, if (isTRUE(cdr)) "cdr")
-        
-        center_covar(dt = data_sender_ligand_1, covar = covar) -> covariates # The 4 data sets are different. But the column names are the same.
-        center_covar(dt = data_receiver_receptor_1, covar = covar)
-        center_covar(dt = data_sender_ligand, covar = covar)
-        center_covar(dt = data_receiver_receptor, covar = covar)
-        
-        covariates <- c("class", covariates)
-      }
-      
-      # Define model formulas
-      fixed_effects <- paste(covariates, collapse = " + ")
-      formula_linear <- as.formula(paste("y ~ 0 +", fixed_effects))
-      formula_logistic <- as.formula(paste("z ~ 0 +", fixed_effects))
-      if (lmm_re) {
-        formula_linear <- as.formula(paste("y ~ 0 +", fixed_effects, "+ (1|id)"))
-      }
-      if (logmm_re) {
-        fixed_formula <- as.formula(paste("z ~ 0 +", fixed_effects))
-        random_formula <- as.formula("~ 1 | id")
-        formula_logistic <- list("fixed" = fixed_formula, "random" = random_formula)
-      }
-      
-      fit_model <- function(part, data, formula, name) {
-        stopifnot(part == "linear" || part == "logistic")
-        warnings. <- list()
-        messages. <- list()
-        fit <- tryCatch(
-          withCallingHandlers(
-            {
-              if (part == "linear") {
-                cond <- detect_all_zeros2(dt = data, id_col = "id", id = unique_ids)
-                if (cond) {
-                  stop("Too few cells expressing the ligand/receptor gene for fitting a linear model.")
+      covariates <- c("class", covariates)
+    }
+    
+    # Define model formulas
+    fixed_effects <- paste(covariates, collapse = " + ")
+    formula_linear <- as.formula(paste("y ~ 0 +", fixed_effects))
+    formula_logistic <- as.formula(paste("z ~ 0 +", fixed_effects))
+    if (lmm_re) {
+      formula_linear <- as.formula(paste("y ~ 0 +", fixed_effects, "+ (1|id)"))
+    }
+    if (logmm_re) {
+      fixed_formula <- as.formula(paste("z ~ 0 +", fixed_effects))
+      random_formula <- as.formula("~ 1 | id")
+      formula_logistic <- list("fixed" = fixed_formula, "random" = random_formula)
+    }
+    
+    fit_model <- function(part, data, formula, name) {
+      stopifnot(part == "linear" || part == "logistic")
+      warnings. <- list()
+      messages. <- list()
+      fit <- tryCatch(
+        withCallingHandlers(
+          {
+            if (part == "linear") {
+              cond <- detect_all_zeros2(dt = data, id_col = "id", id = unique_ids)
+              if (cond) {
+                stop("Too few cells expressing the ligand/receptor gene for fitting a linear model.")
+              } else {
+                if (isTRUE(lmm_re)) {
+                  lmer(formula, data = data, control = control_lmm)
                 } else {
-                  if (isTRUE(lmm_re)) {
-                    lmer(formula, data = data, control = control_lmm)
-                  } else {
-                    lm(formula, data = data)
-                  }
-                }
-              } else if (part == "logistic") {
-                cond <- isTRUE(sep_detection) && detect_re_separation2(dt = data, z_col = "z", id_col = "id", num_ids = num_ids, sep_sample_prop = sep_sample_prop, sep_sample_n = sep_sample_n)
-                if (cond) {
-                  stop("Complete or Quasi-complete separation detected.")
-                } else {
-                  if (isTRUE(logmm_re)) {
-                    mixed_model(fixed = formula$fixed, random = formula$random, family = binomial(), data = data, control = control_logmm)
-                  } else {
-                    glm(formula, family = binomial(), data = data, control = control_logm)
-                  }
+                  lm(formula, data = data)
                 }
               }
-            },
-            warning = function(w) {
-              warnings.[[length(warnings.) + 1L]] <<- w$message
-              invokeRestart("muffleWarning")
-            },
-            message = function(m) {
-              messages.[[length(messages.) + 1L]] <<- m$message
-              invokeRestart("muffleMessage")
+            } else if (part == "logistic") {
+              cond <- isTRUE(sep_detection) && detect_re_separation2(dt = data, z_col = "z", id_col = "id", num_ids = num_ids, sep_sample_prop = sep_sample_prop, sep_sample_n = sep_sample_n)
+              if (cond) {
+                stop("Complete or Quasi-complete separation detected.")
+              } else {
+                if (isTRUE(logmm_re)) {
+                  mixed_model(fixed = formula$fixed, random = formula$random, family = binomial(), data = data, control = control_logmm)
+                } else {
+                  glm(formula, family = binomial(), data = data, control = control_logm)
+                }
+              }
             }
-          ),
-          error = function(e) {
-            error_messages[[name]] <<- e$message
-            return(NULL)
+          },
+          warning = function(w) {
+            warnings.[[length(warnings.) + 1L]] <<- w$message
+            invokeRestart("muffleWarning")
+          },
+          message = function(m) {
+            messages.[[length(messages.) + 1L]] <<- m$message
+            invokeRestart("muffleMessage")
           }
-        )
-        if (length(warnings.) > 0) {
-          warning_messages[[name]] <<- warnings.
+        ),
+        error = function(e) {
+          error_messages[[name]] <<- e$message
+          return(NULL)
         }
-        if (length(messages.) > 0) {
-          the_messages[[name]] <<- messages.
-        }
-        fit
-      }
-      
-      warning_messages <- the_messages <- error_messages <- list()
-      
-      fit.l.linear <- fit_model(part = "linear", data = data_sender_ligand_1, formula = formula_linear, name = "ligand.linear")
-      fit.r.linear <- fit_model(part = "linear", data = data_receiver_receptor_1, formula = formula_linear, name = "receptor.linear")
-      fit.l.logistic <- fit_model(part = "logistic", data = data_sender_ligand, formula = formula_logistic, name = "ligand.logistic")
-      fit.r.logistic <- fit_model(part = "logistic", data = data_receiver_receptor, formula = formula_logistic, name = "receptor.logistic")
-      
-      if (length(warning_messages) > 0) {
-        results.warning[[paste(sender, receiver, ligand, receptor, sep = "-")]] <- warning_messages
-      }
-      if (length(the_messages) > 0) {
-        results.message[[paste(sender, receiver, ligand, receptor, sep = "-")]] <- the_messages
-      }
-      if (length(error_messages) > 0) {
-        results.error[[paste(sender, receiver, ligand, receptor, sep = "-")]] <- error_messages
-      }
-      
-      results.estimate[[length(results.estimate) + 1L]] <- ccc_estimate(
-        fit.l.linear = fit.l.linear, fit.l.logistic = fit.l.logistic,
-        fit.r.linear = fit.r.linear, fit.r.logistic = fit.r.logistic,
-        unique_levels = unique_levels, lmm_re = lmm_re, logmm_re = logmm_re,
-        sandwich = sandwich,
-        sender = sender, receiver = receiver,
-        ligand = ligand, receptor = receptor
       )
+      if (length(warnings.) > 0) {
+        warning_messages[[name]] <<- warnings.
+      }
+      if (length(messages.) > 0) {
+        the_messages[[name]] <<- messages.
+      }
+      fit
     }
+    
+    warning_messages <- the_messages <- error_messages <- list()
+    
+    fit.l.linear <- fit_model(part = "linear", data = data_sender_ligand_1, formula = formula_linear, name = "ligand.linear")
+    fit.r.linear <- fit_model(part = "linear", data = data_receiver_receptor_1, formula = formula_linear, name = "receptor.linear")
+    fit.l.logistic <- fit_model(part = "logistic", data = data_sender_ligand, formula = formula_logistic, name = "ligand.logistic")
+    fit.r.logistic <- fit_model(part = "logistic", data = data_receiver_receptor, formula = formula_logistic, name = "receptor.logistic")
+    
+    # if (length(warning_messages) > 0) {
+    #   results.warning[[paste(sender, receiver, ligand, receptor, sep = "-")]] <- warning_messages
+    # }
+    # if (length(the_messages) > 0) {
+    #   results.message[[paste(sender, receiver, ligand, receptor, sep = "-")]] <- the_messages
+    # }
+    # if (length(error_messages) > 0) {
+    #   results.error[[paste(sender, receiver, ligand, receptor, sep = "-")]] <- error_messages
+    # }
+    
+    if (length(warning_messages) == 0) warning_messages <- NULL
+    if (length(the_messages) == 0) the_messages <- NULL
+    if (length(error_messages) == 0) error_messages <- NULL
+    
+    dt.estimate <- ccc_estimate(
+      fit.l.linear = fit.l.linear, fit.l.logistic = fit.l.logistic,
+      fit.r.linear = fit.r.linear, fit.r.logistic = fit.r.logistic,
+      unique_levels = unique_levels, lmm_re = lmm_re, logmm_re = logmm_re,
+      sandwich = sandwich, sender = sender, receiver = receiver,
+      ligand = ligand, receptor = receptor, var_to_test = "class"
+    )
+    ###
     if (verbose) {
       p()
     }
     list(
-      descriptive_stats = rbindlist(results.summary),
-      estimate_results = rbindlist(results.estimate, fill = TRUE),
-      errors = results.error,
-      warnings = results.warning,
-      messages = results.message
+      descriptive_stats = dt.summary,
+      estimate_results = dt.estimate,
+      errors = error_messages,
+      warnings = warning_messages,
+      messages = the_messages
     )
   }
+  
+  # browser()
   setDTthreads(threads = 1)
-  results_obj <- future_lapply(i_s, FUN = run_analysis, future.seed = TRUE, future.chunk.size = chunk_size)
+  results_obj <- future_lapply(j_s, FUN = run_analysis, future.seed = TRUE, future.chunk.size = chunk_size)
   setDTthreads(threads = old_nthreads)
   
   list.descriptive_stats <- lapply(results_obj, \(x) x$descriptive_stats)
@@ -485,15 +495,19 @@ ccc_enrich <- function(expression_matrix, metadata,
   list.warnings <- lapply(results_obj, \(x) x$warnings)
   list.messages <- lapply(results_obj, \(x) x$messages)
   
+  list.errors <- Filter(Negate(is.null), list.errors)
+  list.warnings <- Filter(Negate(is.null), list.warnings)
+  list.messages <- Filter(Negate(is.null), list.messages)
+  
   dt.estimate.all <- rbindlist(list.estimate_results, fill = TRUE)
   
   list(
     func = as.character(match.call()[[1]]),
     summary = as.data.frame(rbindlist(list.descriptive_stats)),
     estimate = as.data.frame(dt.estimate.all),
-    errors = do.call(c, list.errors),
-    warnings = do.call(c, list.warnings),
-    messages = do.call(c, list.messages)
+    errors = list.errors,
+    warnings = list.warnings,
+    messages = list.messages
   )  
 }
     

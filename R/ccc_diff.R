@@ -294,18 +294,14 @@ ccc_diff <- function(expression_matrix, metadata,
   unique_levels <- unique(metadata_subset[["group"]])
 
   setDT(pairs4analysis)
-  npairs <- nrow(pairs4analysis)
   unique_ids <- unique(metadata_subset[, id])
-  i_s <- seq(1L, nrow(pairs4analysis), by = chunk_size)
+  names(j_s) <- paste(pairs4analysis$sender, pairs4analysis$receiver, pairs4analysis$ligand, pairs4analysis$receptor, sep = "-")
   if (verbose) {
     p <- progressr::progressor(along = i_s)
     # message("Starting statistical analysis...")
   }
 
-  run_analysis <- function(i) {
-    chunk <- pairs4analysis[i:min(i + chunk_size - 1L, npairs), ]
-
-    results.summary <- results.estimate <- results.error <- results.warning <- results.message <- list()
+  run_analysis <- function(j) {
     for (j in 1L:nrow(chunk)) {
       sender <- chunk$sender[j]
       ligand <- chunk$ligand[j]

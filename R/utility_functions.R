@@ -140,7 +140,7 @@ rename_metadata2 <- function(metadata, cell_id_col, id_col, cell_type_col) {
     setnames(metadata, old = c(cell_id_col, cell_type_col), new = c("cell_id", "cell_type"))
     metadata[, id := "constant"]
   } else {
-    data.table::setnames(metadata, old = c(cell_id_col, id_col, cell_type_col), new = c("cell_id", "id", "group", "cell_type")) # , skip_absent = T)
+    data.table::setnames(metadata, old = c(cell_id_col, id_col, cell_type_col), new = c("cell_id", "id", "cell_type")) # , skip_absent = T)
   }
   return(metadata)
 }
