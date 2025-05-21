@@ -1,11 +1,40 @@
 #' Identify Differential or Enriched Cell-Cell Communication
 #' 
 #' Perform Wald tests on the product of ligand expression levels in sender and receptor expression levels in receiver for differential or enriched cell-cell communication.
+#' This function performs enrichment analysis for cell-cell communication by comparing the expression of ligand-receptor pairs
+#' in target cell type pairs against background cell types. For each target cell type pair, it calculates:
+#' \itemize{
+#'   \item Expression metrics (mean, standard deviation, percentage above threshold)
+#'   \item Statistical tests comparing target vs background expression using linear and logistic models
+#'   \item Fold change between target and background
+#'   \item Multiple p-value combinations (Hurdle, Stouffer's method, Fisher's method)
+#' }
 #' 
-#' 
+#' @param ccc_obj output of [ccc::ccc_diff()] or [ccc::ccc_enrich()].
+#' @param contrast a named numeric vector or a numeric matrix with column names. The names should match the levels of the variable being tested (specified by `group_col` argument of [ccc::ccc_diff()]; the testings are performed based on this). Only needs to be specified when `ccc_obj` is the output of [ccc::ccc_diff()].
+#' @param test_type a character string for the type of test. Either "chisq" (default) or "z". If "chisq", perform Wald Chisq tests. If "z", perform Wald Z tests.
+#' @param ha a character string for the alternative hypothesis. Either "greater" (default), "less", "greater.abs", or "less.abs". If "greater" or "less", perform one-sided tests. If "greater.abs" or "less.abs", perform two-sided tests of composite null hypotheses.
+#' @param c_linear numeric scalar. The threshold for the linear component of the composite null hypothesis. Defaults to 0.
+#' @param c_logisitc numeric scalar. The threshold for the logistic component of the composite null hypothesis. Defaults to 0.
+#' @param c_hurdel numeric scalar. The threshold for the hurdle component of the composite null hypothesis. Defaults to 0.
+#' @param verbose logical scalar. If `TRUE` (the default), display a progress bar. The default handler is "progress". This package uses the \pkg{progressr} framework for progress reporting, so users can customize the progress bar. See [progressr::handlers()] for customizing progress bar behavior.
 #' @param padj_method a character string for multiple testing correction method. This is passed to [stats::p.adjust()]. Defaults to "BH".
 #' @param cell_type_padj logical scalar. If `TRUE` (the default), adjust p-values for each sender-receiver pair.
 #' @param chunk_size integer scalar. The number of communication pairs (each defined by a distinct combination of sender, receiver, ligand, and receptor) per chunk. Passed to the `future.chunk.size` argument of [future.apply::future_mapply()]. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.
+#' 
+#' @details
+#' The delta method is applied to obtain appropriate standard errors for the product of ligand and receptor expression levels, using estimates from the fitted hurdle models. Then Wald tests are performed.
+#' 
+#' 
+#' When both linear and logistic components are fitted successfully, four different methods are used to combine their p-values:
+#' \itemize{
+#'   \item{\code{'Hurdle'}}: A chi-square test statistic is computed for the combined hurdle model, with degrees of freedom equal to the number of contrast parameters.
+#'   \item{\code{'2-part'}}: A chi-square test statistic is computed as the sum of the linear and logistic test statistics, with degrees of freedom equal to twice the number of contrast parameters. This is only available for `test_type = "chisq"`.
+#'   \item{\code{Stouffer's method}}: P-values from the linear and logistic components are converted to z-scores, summed up, and converted back to a p-value.
+#'   \item{\code{Fisher's method}}: A chi-square test statistic is computed as -2 times the sum of the logarithms of the p-values from the linear and logistic components, with degrees of freedom equal to twice the number of p-values, which is 4 in this case.
+#' }
+#' 
+#' a data frame containing the results of differential cell-cell communication analysis, including effect sizes, p-values, adjusted p-values, etc.
 #' 
 ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
                      c_linear = 0, c_logisitc = 0, c_hurdel = 0,

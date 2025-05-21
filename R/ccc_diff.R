@@ -1,14 +1,15 @@
-#' Differential Cell-Cell Communication Analysis
+#' Differential or Enriched Cell-Cell Communication Analysis
 #'
-#' For each communication pair (defined by a distinct combination of sender, receiver, ligand, and receptor), fit two gene-wise hurdle models (linear for expression levels > `threshold`; logistic for expression levels > `threshold` vs. expression levels <= `threshold`).
+#' For each communication pair (defined by a distinct combination of sender, receiver, ligand, and receptor), fit a gene-wise hurdle model (the linear component for expression levels > `threshold`; the logistic component for expression levels > `threshold` vs. expression levels <= `threshold`) to ligand and receptor gene expression data respectively.
+#' `ccc_diff` computes the mean and covariance estimates for the variable of interest, which is specified by `group_col`, in both components of the hurdle model.
+#' `ccc_enrich` computes the mean and covariance estimates for the target cell types, which are specified by `sender` and `receiver`, and the background cell types (all non-target cell types), in both components of the hurdle model.
 #' Results tables of effects sizes and p-values can be generated using [ccc::ccc_test].
 #'
 #' @param expression_matrix a numeric matrix of normalized counts, with rows corresponding to genes and columns corresponding to cells. Both row names (gene symbols) and column names (cell identifiers) must be provided.
 #' @param metadata a data frame containing cell-level metadata (e.g., cell type, group, id, covariates).
-#' @param contrast a named numeric vector or a numeric matrix with column names. The names should match the levels of the variable being tested (specified by `group_col`). The testings are performed based on this.
 #' @param cell_id_col a character string specifying the name of the column in `metadata` that contains cell identifiers. These ID's should match the column names of `expression_matrix`. Defaults to `"cell_id"`.
 #' @param cell_type_col a character string specifying the name of the column in `metadata` that contains cell type annotations. Defaults to `"cell_type"`.
-#' @param group_col a character string specifying the name of the column in `metadata` that represents the variable to be tested. The values in this column should match the names specified in `contrast`. Defaults to `group`.
+#' @param group_col a character string specifying the name of the column in `metadata` that represents the variable to be tested. The values in this column should match the names specified in `contrast` of [ccc::ccc_test()]. Defaults to `group`.
 #' @param covar_col a character string or a character vector specifying the column(s) in `metadata` that represent covariates to include in the model. Defaults to `NULL`, meaning no covariates are adjusted for.
 #' @param cdr logical scalar. If `TRUE` (the default), calculate and adjust for cellular detection rates (CDR). The CDR of a cell is defined as the number of genes with expression level above `threshold` divided by the total number of genes.
 #' @param id_col a character string specifying the name of the column in `metadata` that contains individual-level (sample-level) ID's. Used for random effect modeling. Must be provided if `lmm_re == TRUE` or `logmm_re == TRUE`; otherwise, this can be omitted. Defaults to `"id"`.
@@ -25,47 +26,48 @@
 #'    \item \dQuote{\code{min_avg_gene}}: the subunit gene with the minimum average expression is selected.
 #'    \item \dQuote{\code{min_rate_gene}}: the subunit gene with the minimum expression rate is selected. The expression rate for a gene is calculated as the number of cells with expression level above `threshold` divided by the total number of cells.
 #'  }
-#' @param sandwich logical scalar. If `TRUE`, sandwich standard errors are used in the calculations. Defaults to `FALSE`.
 #' @param verbose logical scalar. If `TRUE` (the default), display a progress bar. The default handler is "progress". This package uses the \pkg{progressr} framework for progress reporting, so users can customize the progress bar. See [progressr::handlers()] for customizing progress bar behavior.
-#' @param min_cell integer scalar. Filter out cell types with fewer than `min_cell` cells. Defaults to 10.
+#' @param min_cell integer scalar. Exclude cell types with fewer than `min_cell` cells from the analysis. Defaults to 10.
 #' @param min_pct numeric scalar. Only test ligand-receptor pairs that are expressed above `threshold` in a minimum fraction of `min_pct` cells for `large_n` individuals/samples in sender and receiver cell types respectively. Defaults to 0.01.
 #' @param large_n integer scalar. Number of individuals/samples that are considered to be "large". Defaults to 2.
 #' @param min_total_pct numeric scalar. Only test ligand-receptor pairs that are detected (expression level above `threshold`) in a minimum fraction of `min_total_pct` cells across all individuals/samples in sender and receiver cell types respectively. Defaults to 0.
 #' @param threshold numeric scalar. A gene is considered expressed in a cell if its expression level is greater than `threshold`. Defaults to 0.
 #' @param sep_detection logical scalar. If `TRUE` (the default), detect complete or quasi-complete separation in logistic models.
-#' @param sep_prop numeric scalar. For each ligand/receptor gene, if it is expressed above/below `threshold` in all cells of more than a `sep_prop` fraction of individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.
-#' @param sep_n numeric scalar. For each ligand/receptor gene, if it is expressed above/below `threshold` in all cells of more than `sep_n` individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.
+#' @param sep_prop numeric scalar. For each ligand/receptor gene, if it is expressed above/below `threshold` in all cells of target/background cell types of more than a `sep_prop` fraction of individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.
+#' @param sep_n numeric scalar. For each ligand/receptor gene, if it is expressed above/below `threshold` in all cells of target/background cell types of more than `sep_n` individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.
+#' @param sep_sample_prop numeric scalar. For each ligand/receptor gene, if it is expressed above/below `threshold` in all cells of more than a `sep_sample_prop` fraction of individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.
+#' @param sep_sample_n numeric scalar. For each ligand/receptor gene, if it is expressed above/below `threshold` in all cells of more than `sep_sample_n` individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.
+#' @param sandwich logical scalar. If `TRUE`, sandwich standard errors are used in the calculations. Defaults to `FALSE`.
 #' @param control_logm control parameters for optimization in [stats::glm].
 #' @param control_lmm control parameters for optimization in [lme4::lmer].
 #' @param control_logmm control parameters for optimization in [GLMMadaptive::mixed_model].
-#' @param chunk_size integer scalar. The number of communication pairs (each defined by a distinct combination of sender, receiver, ligand, and receptor) to be sent to each parallel environment. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.
+#' @param chunk_size integer scalar. The number of communication pairs (each defined by a distinct combination of sender, receiver, ligand, and receptor) per chunk. Passed to the `future.chunk.size` argument of [future.apply::future_lapply()]. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.
 #' @details
-#' This function perform differential cell-cell communication analysis. For each communication pair, a hurdle model is fitted to ligand expression data in sender and another hurdle model is fitted to receptor expression data in receiver.
-#' The delta method is applied to obtain appropriate standard errors for the product of ligand and receptor expression levels, using estimates from the fitted hurdle models. Then Wald tests are performed.
+#' `ccc_diff` performs differential cell-cell communication analysis. For each communication pair, a hurdle model is fitted to ligand expression data in sender and another hurdle model is fitted to receptor expression data in receiver.
+#' `ccc_enrich` performs enriched cell-cell communication analysis. For each communication pair, a hurdle model is fitted to ligand expression data in all cells and another hurdle model is fitted to receptor expression data in all cells.
+#' The hurdle model doesn't have an fixed intercept. In `ccc_diff`, the variable of interest (specified by `group_col`) is modeled using the cell means coding scheme, where each level of the variable is represented by a separate dummy variable.
+#' In `ccc_enrich`, the model includes a binary variable to distinguish between target and background cell types, and this binary variable is also modeled using the cell means coding scheme.
+#' Besides, the other covariates are centered to have a mean of 0. This allows the mean ligand/receptor expression in each level of `group_col` (`ccc_diff`) or in target/background cell types (`ccc_enrich`) to be estimated directly.
 #'
-#' When both linear and logistic components are fitted successfully, four different methods are used to combine their p-values:
-#' \itemize{
-#'   \item{\code{'Hurdle'}}: A chi-square test statistic is computed for the combined hurdle model, with degrees of freedom equal to the number of contrast parameters.
-#'   \item{\code{'2-part'}}: A chi-square test statistic is computed as the sum of the linear and logistic test statistics, with degrees of freedom equal to twice the number of contrast parameters. This is only available for `test_type = "chisq"`.
-#'   \item{\code{Stouffer's method}}: P-values from the linear and logistic components are converted to z-scores, summed up, and converted back to a p-value.
-#'   \item{\code{Fisher's method}}: A chi-square test statistic is computed as -2 times the sum of the logarithms of the p-values from the linear and logistic components, with degrees of freedom equal to twice the number of p-values, which is 4 in this case.
-#' }
-#'
-#' Users can either specify the relevant column names of `metadata` using the arguments `cell_id_col`, `cell_type_col`, `group_col`, `covar_col` (can be omitted if no covariates are to be adjusted for), and `id_col`.
+#' Users can either specify the relevant column names of `metadata` using the arguments `cell_id_col`, `cell_type_col`, `group_col`, `covar_col` (can be omitted if no covariates are to be adjusted for), and `id_col`, or rename the relevant columns in `metadata` to match the default names.
 #' To adjust for CDR, simply set `cdr = TRUE` (This is also the default setting); do not calculate and add CDR manually to `metadata`.
-#'
-#' For each ligand/receptor gene, if the model fitting fails or produce warnings or diagnostic messages, this function will return the relevant information in the output. If some p-values are missing in the output, users can check `errors` element of the output to find the corresponding error messages.
+#' The `lmm_re` and `logmm_re` arguments specify whether to include random intercepts in the linear and logistic components of the hurdle model respectively.
+#' The `lr` argument specifies the ligand-receptor database to use. The default is `"omnipathr"`, which considers ligand-receptor interactions with multiple subunits. `"ramilowski"` is another database, which only contains binary ligand-receptor interactions. Users can also provide their own data frame with ligand-receptor pairs. For details, see the `lr` argument.
+#' 
+#' For each ligand/receptor gene, if the model fitting fails or produces warnings or diagnostic messages, this function will return the relevant information in the output. If the estimates of some communication pairs are missing in the output, users can check `errors` element of the output to find the corresponding error messages.
 #'
 #' Parallelization is supported via \pkg{future}. Progress bars are customized using \pkg{progressr}.
 #'
 #' @returns A list with the following elements:
 #'  \itemize{
+#'    \item{\code{func}}: the name of the `ccc_*` function being called.
 #'    \item{\code{summary}}: a data frame of descriptive statistics for ligand/receptor gene expressions in sender/receiver cell types.
-#'    \item{\code{test}}: a data frame containing the results of differential cell-cell communication analysis, including effect sizes, p-values, adjusted p-values, etc.
+#'    \item{\code{estimate}}: a data frame of estimates for the variable of interest specified by `group_col` (`ccc_diff`), or the target and background cell types (`ccc_enrich`) in the linear and logistic components of the hurdle model.
 #'    \item(\code{errors}): a list of communication pairs for which model fitting failed, along with corresponding error messages.
 #'    \item{\code{warnings}}: a list of communication pairs for which warnings are issued during model fitting, along with corresponding warning messages.
 #'    \item{\code{messages}}: a list of communication pairs for which diagnostic messages are generated during model fitting, along with corresponding messages.
 #'  }
+#'  See [ccc::ccc_test()] for how to generate the test results.
 #'
 #' @import data.table
 #' @importFrom future.apply future_lapply future_mapply
@@ -106,6 +108,7 @@
 #' }
 #'
 #' @export
+#' @rdname ccc_analysis
 
 ccc_diff <- function(expression_matrix, metadata,
                      cell_id_col = "cell_id", cell_type_col = "cell_type",
@@ -116,9 +119,9 @@ ccc_diff <- function(expression_matrix, metadata,
                      verbose = TRUE, min_cell = 10,
                      min_pct = 0.01, large_n = 2, min_total_pct = 0,
                      threshold = 0, sep_detection = TRUE, sep_prop = 0, sep_n = 0,
-                     control_logm = list(),
+                     sandwich = FALSE, control_logm = list(),
                      control_lmm = lme4::lmerControl(), control_logmm = list(),
-                     chunk_size = 10, sandwich = FALSE) {
+                     chunk_size = 10) {
   old_nthreads <- getDTthreads()
   on.exit(setDTthreads(old_nthreads), add = TRUE)
 
@@ -406,7 +409,7 @@ ccc_diff <- function(expression_matrix, metadata,
             if (part == "linear") {
               cond <- detect_all_zeros(dt = data, id_col = "id", id = unique_ids)
               if (cond) {
-                stop("Too few cells expressing the ligand/receptor gene for fitting a linear model.")
+                stop("Too few cells expressing the ligand/receptor gene above the `threshold` for fitting a linear model.")
               } else {
                 if (isTRUE(lmm_re)) {
                   lmer(formula, data = data, control = control_lmm)

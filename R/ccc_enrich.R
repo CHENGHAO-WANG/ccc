@@ -1,13 +1,8 @@
-#' Enrichment Analysis for Cell-Cell Communication
+#' Enriched Cell-Cell Communication Analysis
 #'
-#' This function performs enrichment analysis for cell-cell communication by comparing the expression of ligand-receptor pairs
-#' in target cell type pairs against background cell types. For each target cell type pair, it calculates:
-#' \itemize{
-#'   \item Expression metrics (mean, standard deviation, percentage above threshold)
-#'   \item Statistical tests comparing target vs background expression using linear and logistic models
-#'   \item Fold change between target and background
-#'   \item Multiple p-value combinations (Hurdle, Stouffer's method, Fisher's method)
-#' }
+#' For each communication pair (defined by a distinct combination of sender, receiver, ligand, and receptor), fit a gene-wise hurdle model (a linear model for expression levels > `threshold`; a logistic model for expression levels > `threshold` vs. expression levels <= `threshold`) to ligand and receptor gene expression data respectively.
+#' Obtain the mean and covariance estimates for cell type pairs of interest, which are specified by `sender` and `receiver`.
+#' Results tables of effects sizes and p-values can be generated using [ccc::ccc_test].
 #'
 #' @param expression_matrix a numeric matrix of normalized counts, with rows corresponding to genes and columns corresponding to cells. Both row names (gene symbols) and column names (cell identifiers) must be provided.
 #' @param metadata a data frame containing cell-level metadata (e.g., cell type, group, id, covariates).
@@ -36,13 +31,11 @@
 #' @param min_total_pct numeric scalar. Only test ligand-receptor pairs that are detected (expression level above `threshold`) in a minimum fraction of `min_total_pct` cells across all individuals/samples in sender and receiver cell types respectively. Defaults to 0.
 #' @param threshold numeric scalar. A gene is considered expressed in a cell if its expression level is greater than `threshold`. Defaults to 0.
 #' @param sep_detection logical scalar. If `TRUE` (the default), detect complete or quasi-complete separation in logistic models.
-#' @param sep_sample_prop numeric scalar. For each ligand/receptor gene, if it is expressed above/below `threshold` in all cells of more than a `sep_sample_prop` fraction of individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.
-#' @param sep_sample_n numeric scalar. For each ligand/receptor gene, if it is expressed above/below `threshold` in all cells of more than `sep_sample_n` individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.
+#' @param sandwich logical scalar. If `TRUE`, use sandwich variance estimators for robust inference. Defaults to `FALSE`.
 #' @param control_logm control parameters for optimization in [stats::glm].
 #' @param control_lmm control parameters for optimization in [lme4::lmer].
 #' @param control_logmm control parameters for optimization in [GLMMadaptive::mixed_model].
-#' @param chunk_size integer scalar. The number of communication pairs (each defined by a distinct combination of sender, receiver, ligand, and receptor) to be sent to each parallel environment. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.
-#' @param sandwich logical scalar. If `TRUE`, use sandwich variance estimators for robust inference. Defaults to `FALSE`.
+#' @param chunk_size integer scalar. The number of communication pairs (each defined by a distinct combination of sender, receiver, ligand, and receptor) per chunk. Passed to the `future.chunk.size` argument of [future.apply::future_lapply()]. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.
 #'
 #' @details
 #' This function performs enrichment analysis for cell-cell communication. For each target cell type pair (sender-receiver), 
@@ -64,16 +57,11 @@
 #'    \item{\code{messages}}: a list of communication pairs for which diagnostic messages are generated during analysis, along with corresponding messages.
 #'  }
 #'
-#' @import data.table
-#' @importFrom future.apply future_lapply
-#' @importFrom progressr progressor
-#' @importFrom utils data
-#' @importFrom stats as.formula p.adjust pchisq pnorm qnorm sd
-#'
 #' @examples
 #' # example code
 #'
 #' @export
+#' @rdname ccc_analysis
 
 ccc_enrich <- function(expression_matrix, metadata,
                       cell_id_col = "cell_id", cell_type_col = "cell_type",
@@ -84,9 +72,9 @@ ccc_enrich <- function(expression_matrix, metadata,
                       verbose = TRUE, min_cell = 10,
                       min_pct = 0.01, large_n = 1, min_total_pct = 0,
                       threshold = 0, sep_detection = TRUE, sep_sample_prop = 0, sep_sample_n = 0,
-                      control_logm = list(),
+                      sandwich = FALSE, control_logm = list(),
                       control_lmm = lme4::lmerControl(), control_logmm = list(),
-                      chunk_size = 10, sandwich = FALSE) {
+                      chunk_size = 10) {
   old_nthreads <- getDTthreads()
   on.exit(setDTthreads(old_nthreads), add = TRUE)
 
@@ -399,7 +387,7 @@ ccc_enrich <- function(expression_matrix, metadata,
             if (part == "linear") {
               cond <- detect_all_zeros2(dt = data, id_col = "id", id = unique_ids)
               if (cond) {
-                stop("Too few cells expressing the ligand/receptor gene for fitting a linear model.")
+                stop("Too few cells expressing the ligand/receptor gene above the `threshold` for fitting a linear model.")
               } else {
                 if (isTRUE(lmm_re)) {
                   lmer(formula, data = data, control = control_lmm)
