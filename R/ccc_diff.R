@@ -1,8 +1,10 @@
 #' Differential or Enriched Cell-Cell Communication Analysis
 #'
-#' For each communication pair (defined by a distinct combination of sender, receiver, ligand, and receptor), fit a gene-wise hurdle model (the linear component for expression levels > `threshold`; the logistic component for expression levels > `threshold` vs. expression levels <= `threshold`) to ligand and receptor gene expression data respectively.
+#' For each communication event (defined by a distinct combination of a sender, a receiver, a ligand, and a receptor), fit a gene-wise hurdle model (the linear component for expression levels > `threshold`; the logistic component for expression levels > `threshold` vs. expression levels <= `threshold`) to ligand and receptor gene expression data respectively.
+#' 
 #' `ccc_diff` computes the mean and covariance estimates for the variable of interest, which is specified by `group_col`, in both components of the hurdle model.
 #' `ccc_enrich` computes the mean and covariance estimates for the target cell types, which are specified by `sender` and `receiver`, and the background cell types (all non-target cell types), in both components of the hurdle model.
+#' 
 #' Results tables of effects sizes and p-values can be generated using [ccc::ccc_test].
 #'
 #' @param expression_matrix a numeric matrix of normalized counts, with rows corresponding to genes and columns corresponding to cells. Both row names (gene symbols) and column names (cell identifiers) must be provided.
@@ -41,20 +43,21 @@
 #' @param control_logm control parameters for optimization in [stats::glm].
 #' @param control_lmm control parameters for optimization in [lme4::lmer].
 #' @param control_logmm control parameters for optimization in [GLMMadaptive::mixed_model].
-#' @param chunk_size integer scalar. The number of communication pairs (each defined by a distinct combination of sender, receiver, ligand, and receptor) per chunk. Passed to the `future.chunk.size` argument of [future.apply::future_lapply()]. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.
+#' @param chunk_size integer scalar. The number of communication events (each defined by a distinct combination of sender, receiver, ligand, and receptor) per chunk. Passed to the `future.chunk.size` argument of [future.apply::future_lapply()]. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.
 #' @details
-#' `ccc_diff` performs differential cell-cell communication analysis. For each communication pair, a hurdle model is fitted to ligand expression data in sender and another hurdle model is fitted to receptor expression data in receiver.
-#' `ccc_enrich` performs enriched cell-cell communication analysis. For each communication pair, a hurdle model is fitted to ligand expression data in all cells and another hurdle model is fitted to receptor expression data in all cells.
+#' `ccc_diff` performs differential cell-cell communication analysis. For each communication event, a hurdle model is fitted to ligand expression data in sender and another hurdle model is fitted to receptor expression data in receiver.
+#' `ccc_enrich` performs enriched cell-cell communication analysis. For each communication event, a hurdle model is fitted to ligand expression data in all cells and another hurdle model is fitted to receptor expression data in all cells.
 #' The hurdle model doesn't have an fixed intercept. In `ccc_diff`, the variable of interest (specified by `group_col`) is modeled using the cell means coding scheme, where each level of the variable is represented by a separate dummy variable.
-#' In `ccc_enrich`, the model includes a binary variable to distinguish between target and background cell types, and this binary variable is also modeled using the cell means coding scheme.
+#' In `ccc_enrich`, the model includes a binary variable to distinguish between target and background cell types, and this binary variable is also modeled using the cell means coding scheme. In ligand expression data, the target cell type is specified by `sender`, and the background cell types are all other cell types. In receptor expression data, the target cell type is specified by `receiver`, and the background cell types are all other cell types.
 #' Besides, the other covariates are centered to have a mean of 0. This allows the mean ligand/receptor expression in each level of `group_col` (`ccc_diff`) or in target/background cell types (`ccc_enrich`) to be estimated directly.
 #'
 #' Users can either specify the relevant column names of `metadata` using the arguments `cell_id_col`, `cell_type_col`, `group_col`, `covar_col` (can be omitted if no covariates are to be adjusted for), and `id_col`, or rename the relevant columns in `metadata` to match the default names.
 #' To adjust for CDR, simply set `cdr = TRUE` (This is also the default setting); do not calculate and add CDR manually to `metadata`.
 #' The `lmm_re` and `logmm_re` arguments specify whether to include random intercepts in the linear and logistic components of the hurdle model respectively.
 #' The `lr` argument specifies the ligand-receptor database to use. The default is `"omnipathr"`, which considers ligand-receptor interactions with multiple subunits. `"ramilowski"` is another database, which only contains binary ligand-receptor interactions. Users can also provide their own data frame with ligand-receptor pairs. For details, see the `lr` argument.
+#' Although `sender` and `receiver` can be specified as vectors, each communication event only involves one sender and one receiver (and one ligand expressed by the sender and one receiver expressed by the receiver). Each communication event is analyzed separately.
 #' 
-#' For each ligand/receptor gene, if the model fitting fails or produces warnings or diagnostic messages, this function will return the relevant information in the output. If the estimates of some communication pairs are missing in the output, users can check `errors` element of the output to find the corresponding error messages.
+#' For each ligand/receptor gene, if the model fitting fails or produces warnings or diagnostic messages, this function will return the relevant information in the output. If the estimates of some communication events are missing in the output, users can check `errors` element of the output to find the corresponding error messages.
 #'
 #' Parallelization is supported via \pkg{future}. Progress bars are customized using \pkg{progressr}.
 #'
@@ -63,9 +66,9 @@
 #'    \item{\code{func}}: the name of the `ccc_*` function being called.
 #'    \item{\code{summary}}: a data frame of descriptive statistics for ligand/receptor gene expressions in sender/receiver cell types.
 #'    \item{\code{estimate}}: a data frame of estimates for the variable of interest specified by `group_col` (`ccc_diff`), or the target and background cell types (`ccc_enrich`) in the linear and logistic components of the hurdle model.
-#'    \item(\code{errors}): a list of communication pairs for which model fitting failed, along with corresponding error messages.
-#'    \item{\code{warnings}}: a list of communication pairs for which warnings are issued during model fitting, along with corresponding warning messages.
-#'    \item{\code{messages}}: a list of communication pairs for which diagnostic messages are generated during model fitting, along with corresponding messages.
+#'    \item(\code{errors}): a list of communication events for which model fitting failed, along with corresponding error messages.
+#'    \item{\code{warnings}}: a list of communication events for which warnings are issued during model fitting, along with corresponding warning messages.
+#'    \item{\code{messages}}: a list of communication events for which diagnostic messages are generated during model fitting, along with corresponding messages.
 #'  }
 #'  See [ccc::ccc_test()] for how to generate the test results.
 #'
@@ -85,28 +88,49 @@
 #' expression_matrix <- log_normalize(data.sim$counts)
 #' metadata <- data.sim$metadata
 #' 
+#' ## Differential ccc analysis
 #' # Run sequentially
 #' a <- ccc_diff(
 #'   expression_matrix = expression_matrix, metadata = metadata,
 #'   id_col = "sample", lr = lr.sim, sender = "CT1", receiver = c("CT2", "CT3"),
-#'   contrast = c(grp2 = 1, grp1 = -1), lmm_re = TRUE, logmm_re = TRUE
+#'   lmm_re = TRUE, logmm_re = TRUE
 #' )
-#' head(a$summary)
-#' head(a$test)
+#' a.result <- ccc_test(a, contrast = c(grp2 = 1, grp1 = -1))
+#' head(a.result)
 #'
 #' # Run in parallel
 #' library(future)
-#' oplan <- plan(multisession, workers = 4L)
+#' oplan <- plan(multisession, workers = 2L)
 #' a <- ccc_diff(
 #'   expression_matrix = expression_matrix, metadata = metadata,
 #'   id_col = "sample", lr = lr.sim, sender = "CT1", receiver = c("CT2", "CT3"),
-#'   contrast = c(grp2 = 1, grp1 = -1), lmm_re = TRUE, logmm_re = TRUE
+#'   lmm_re = TRUE, logmm_re = TRUE
 #' )
+#' a.result <- ccc_test(a, contrast = c(grp2 = 1, grp1 = -1))
 #' plan(oplan)
-#' head(a$summary)
-#' head(a$test)
+#' head(a.result)
+#' 
+#' ## Enriched ccc analysis
+#' # Run sequentially
+#' b <- ccc_enrich(
+#'   expression_matrix = expression_matrix, metadata = metadata,
+#'   id_col = "sample", lr = lr.sim, sender = "CT1", receiver = c("CT2", "CT3"),
+#'   lmm_re = TRUE, logmm_re = TRUE
+#' )
+#' 
+#' # Run in parallel
+#' library(future)
+#' oplan <- plan(multisession, workers = 2L)
+#' b <- ccc_enrich(
+#'   expression_matrix = expression_matrix, metadata = metadata,
+#'   id_col = "sample", lr = lr.sim, sender = "CT1", receiver = c("CT2", "CT3"),
+#'   lmm_re = TRUE, logmm_re = TRUE
+#'  )
+#' b.result <- ccc_test(b)
+#' plan(oplan)
+#' head(b.result)
 #' }
-#'
+#' 
 #' @export
 #' @rdname ccc_analysis
 

@@ -1,43 +1,83 @@
 #' Identify Differential or Enriched Cell-Cell Communication
 #' 
 #' Perform Wald tests on the product of ligand expression levels in sender and receptor expression levels in receiver for differential or enriched cell-cell communication.
-#' This function performs enrichment analysis for cell-cell communication by comparing the expression of ligand-receptor pairs
-#' in target cell type pairs against background cell types. For each target cell type pair, it calculates:
-#' \itemize{
-#'   \item Expression metrics (mean, standard deviation, percentage above threshold)
-#'   \item Statistical tests comparing target vs background expression using linear and logistic models
-#'   \item Fold change between target and background
-#'   \item Multiple p-value combinations (Hurdle, Stouffer's method, Fisher's method)
-#' }
 #' 
 #' @param ccc_obj output of [ccc::ccc_diff()] or [ccc::ccc_enrich()].
-#' @param contrast a named numeric vector or a numeric matrix with column names. The names should match the levels of the variable being tested (specified by `group_col` argument of [ccc::ccc_diff()]; the testings are performed based on this). Only needs to be specified when `ccc_obj` is the output of [ccc::ccc_diff()].
-#' @param test_type a character string for the type of test. Either "chisq" (default) or "z". If "chisq", perform Wald Chisq tests. If "z", perform Wald Z tests.
-#' @param ha a character string for the alternative hypothesis. Either "greater" (default), "less", "greater.abs", or "less.abs". If "greater" or "less", perform one-sided tests. If "greater.abs" or "less.abs", perform two-sided tests of composite null hypotheses.
-#' @param c_linear numeric scalar. The threshold for the linear component of the composite null hypothesis. Defaults to 0.
-#' @param c_logisitc numeric scalar. The threshold for the logistic component of the composite null hypothesis. Defaults to 0.
-#' @param c_hurdel numeric scalar. The threshold for the hurdle component of the composite null hypothesis. Defaults to 0.
+#' @param contrast a named numeric vector or a numeric matrix with column names. The names should match the levels of the variable being tested (specified by `group_col` argument of [ccc::ccc_diff()]; the testings are performed based on this). Only used if `ccc_obj` is the output of [ccc::ccc_diff()].
+#' @param test_type a character string for the type of test. Either "chisq" or "z". If "chisq", perform Wald Chisq tests. If "z", perform Wald Z tests. Defaults to "chisq" for `ccc_diff` and "z" for `ccc_enrich`. Must be "chisq" if `contrast` has more than one row.
+#' @param ha a character string specifying the alternative hypothesis. Let $\theta$ denote the difference in the product of ligand and receptor expression levels comparing target to background cell types (`ccc_enrich`) or specified by `contrast` (`ccc_diff`).
+#'  \itemize{
+#'   \item \dQuote{\code{greater}}: \eqn{\theta > c}
+#'   \item \dQuote{\code{less}}: \eqn{\theta < c}
+#'   \item \dQuote{\code{greater.abs}}: \eqn{|\theta| > c}
+#'   \item \dQuote{\code{less.abs}}: \eqn{|\theta| < c}
+#'  }
+#' Only used if `test_type = "z"`. Defaults to "greater" for `ccc_enrich`. \eqn{c} is specified using `c_linear`, `c_logistic`, and `c_hurdle` arguments.
+#' @param c_linear,c_logistic,c_hurdle numeric scalar. `c_linear` is for the tests on the linear component, `c_logistic` is for the tests on the logistic component, and `c_hurdle` is for the tests on the hurdle model. Default to 0. Must be non-negative for `ha = "greater.abs"` and `ha = "less.abs"`.
 #' @param verbose logical scalar. If `TRUE` (the default), display a progress bar. The default handler is "progress". This package uses the \pkg{progressr} framework for progress reporting, so users can customize the progress bar. See [progressr::handlers()] for customizing progress bar behavior.
 #' @param padj_method a character string for multiple testing correction method. This is passed to [stats::p.adjust()]. Defaults to "BH".
 #' @param cell_type_padj logical scalar. If `TRUE` (the default), adjust p-values for each sender-receiver pair.
 #' @param chunk_size integer scalar. The number of communication pairs (each defined by a distinct combination of sender, receiver, ligand, and receptor) per chunk. Passed to the `future.chunk.size` argument of [future.apply::future_mapply()]. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.
 #' 
 #' @details
-#' The delta method is applied to obtain appropriate standard errors for the product of ligand and receptor expression levels, using estimates from the fitted hurdle models. Then Wald tests are performed.
+#' This function performs Wald tests based on the output of [ccc::ccc_diff()] or [ccc::ccc_enrich()].
+#' By default, Wald Chisq tests are performed for differential ccc analysis and one-sided Wald Z tests are performed for enriched ccc analysis (alternative hypothesis: communication event in target cell types > background cell types).
 #' 
+#' If the linear component is fitted successfully, this function performs a Wald test on the product of ligand and receptor conditional mean expressions (condition on expression levels > `threshold`).
+#' If the logistic componenet is fitted successfully, this function performs a Wald test on the product of ligand and receptor expression rates (rates of expression levels > `threshold`).
+#' If both components are fitted successfully, this function performs a Wald test on the product of ligand and receptor mean expression levels (conditional mean of ligand \verb{*} expression rate of ligand \verb{*} conditional mean of receptor \verb{*} expression rate of receptor).
+#' The delta method is applied to obtain the relevant standard errors, using the estimates from the output of `ccc_*`.
+#' The effect sizes are computed as the product vector of ligand and receptor expressions (conditional mean expressions, expression rates, and mean expression levels), with each element corresponds to a level of `group_col`, multiplied by `contrast` (`ccc_diff`), or the difference in the product of ligand and receptor expressions comparing target against background cell types (`ccc_enrich`). 
 #' 
-#' When both linear and logistic components are fitted successfully, four different methods are used to combine their p-values:
+#' If `ha = "greater.abs"`, the test statistic is \eqn{(|\hat{\theta}| - c)/se(\hat{\theta})}, and the p-value is two-sided.
+#' If `ha = "less.abs"`, the test statistics are \eqn{(\hat{\theta} - c)/se(\hat{\theta})} and \eqn{(\hat{\theta} + c)/se(\hat{\theta})}. The p-value is the maximum of the two one-sided tests.
+#' 
+#' When both linear and logistic components are fitted successfully in `ccc_*`, three different methods are used to combine their p-values:
 #' \itemize{
-#'   \item{\code{'Hurdle'}}: A chi-square test statistic is computed for the combined hurdle model, with degrees of freedom equal to the number of contrast parameters.
-#'   \item{\code{'2-part'}}: A chi-square test statistic is computed as the sum of the linear and logistic test statistics, with degrees of freedom equal to twice the number of contrast parameters. This is only available for `test_type = "chisq"`.
-#'   \item{\code{Stouffer's method}}: P-values from the linear and logistic components are converted to z-scores, summed up, and converted back to a p-value.
-#'   \item{\code{Fisher's method}}: A chi-square test statistic is computed as -2 times the sum of the logarithms of the p-values from the linear and logistic components, with degrees of freedom equal to twice the number of p-values, which is 4 in this case.
+#'   \item{\code{"2-part"}}: a chi-square test statistic is computed as the sum of the linear and logistic test statistics, with the degrees of freedom added. This is only available if `test_type = "chisq"`.
+#'   \item{\code{"Stouffer's method"}}: p-values from the linear and logistic components are converted to Z-scores, summed up, scaled by \eqn{\sqrt{2}} and converted back to p-values.
+#'   \item{\code{"Fisher's method"}}: a chi-square test statistic is computed as -2 times the sum of the logarithms of the p-values from the linear and logistic components, with the degrees of freedom equal to 4.
 #' }
 #' 
-#' a data frame containing the results of differential cell-cell communication analysis, including effect sizes, p-values, adjusted p-values, etc.
+#' Parallelization is supported via \pkg{future}. Progress bars are customized using \pkg{progressr}.
 #' 
+#' @returns a data frame contains effect sizes, p-values and adjusted p-values for each cell-cell communication event.
+#' 
+#' @examples
+#' \dontrun{
+#' ## Data simulation
+#' dat.sim <- sim_count(seed = 123)
+#' expression_matrix <- log_normalize(dat.sim$counts)
+#' metadata <- dat.sim$metadata
+#' lrdb.sim <- sim_lr(seed = 456, n_lr = 10)
+#' 
+#' ## Differential ccc analysis
+#' a <- ccc_diff(expression_matrix = expression_matrix, metadata = metadata,
+#'    id_col = "sample", lr = lrdb.sim, sender = "CT1", receiver = "CT3")
+#' 
+#' contrast1 <- matrix(c(-1, 1, 0,
+#'                       -1, 0, 1), nrow = 2L, byrow = TRUE,
+#'                       dimnames = list(NULL, c("grp1","grp2","grp3")))
+#' a.result1 <- ccc_test(a, contrast = contrast1)
+#' head(a.result1)
+#' 
+#' contrast2 <- c(grp1 = -1, grp2 = 1)
+#' a.result2 <- ccc_test(a, contrast = contrast2, test_type = "z", ha = "greater")
+#' head(a.result2)
+#' 
+#' ## Enriched ccc analysis
+#' b <- ccc_enrich(expression_matrix = expression_matrix, metadata = metadata,
+#'     id_col = "sample", lr = lrdb.sim, sender = "CT1", receiver = "CT3")
+#' 
+#' b.result1 <- ccc_test(b)
+#' head(b.result1)
+#' 
+#' b.result2 <- ccc_test(b, test_type = "z", ha = "greater",
+#'     c_linear = 0.1, c_logistic = 0.1, c_hurdle = 0.1)
+#' head(b.result2)
+#' }
 ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
-                     c_linear = 0, c_logisitc = 0, c_hurdel = 0,
+                     c_linear = 0, c_logistic = 0, c_hurdle = 0,
                      verbose = TRUE, padj_method = "BH", cell_type_padj = TRUE,
                      chunk_size = 10) {
   # verbose
@@ -83,7 +123,7 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
     }
     if (is.null(test_type)) {
       test_type <- "chisq"
-      changed_args <- args_differ_from_defaults('ha', 'c_linear', 'c_logisitc', 'c_hurdel')
+      changed_args <- args_differ_from_defaults('ha', 'c_linear', 'c_logistic', 'c_hurdle')
       if (length(changed_args) > 0L) {
         message("Perform Wald Chisq tests for differential ccc analysis by default.")
       }
@@ -105,7 +145,7 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
       message("`contrast` is ignored for enriched ccc analysis. Evaluating the difference of target cell type pairs relative to background by design.")
     }
     contrast <- matrix(c(1, -1), nrow = 1L)
-    colnames(contrast) <- c("classtarget", "classbackground")
+    colnames(contrast) <- c("target", "background")
     if (is.null(test_type)) {
       test_type <- "z"
     }
@@ -116,28 +156,28 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
     stop("`ccc_obj` must be the output of `ccc_diff()` or `ccc_enrich()`.")
   }
   if (test_type == "chisq") {
-    changed_args <- args_differ_from_defaults('ha', 'c_linear', 'c_logisitc', 'c_hurdel')
+    changed_args <- args_differ_from_defaults('ha', 'c_linear', 'c_logistic', 'c_hurdle')
     if (length(changed_args) > 0L) {
       message(paste0("`", paste(changed_args, collapse = "`"), "`", " ignored for Wald Chisq tests. Perform two-sided tests of simple null hypothesis."))
     }
   }
   if (test_type == "z") {
     if (ha == "greater.abs" || ha == "less.abs") {
-      if (c_linear < 0 || c_logisitc < 0 || c_hurdel < 0) {
-        stop("`c_linear`, `c_logisitc`, and `c_hurdel` must be non-negative for Z tests of composite null hypotheses.")
+      if (c_linear < 0 || c_logistic < 0 || c_hurdle < 0) {
+        stop("`c_linear`, `c_logistic`, and `c_hurdle` must be non-negative for Z tests of composite null hypotheses.")
       }
     }
   }
   
-  dt.test.all <- as.data.table(ccc_obj$estimate)
+  dt.est.all <- as.data.table(ccc_obj$estimate)
   unique_levels <- colnames(contrast)
   var_names <- paste0(var_name, unique_levels)
   if (verbose) {
-    p <- progressr::progressor(along = seq_len(nrow(data.test.all)))
+    p <- progressr::progressor(along = seq_len(nrow(dt.est.all)))
     # message("Starting statistical analysis...")
   }
   
-  wald.test <- function(coef_l_lm, coef_r_lm, coef_llogm, coef_r_logm,
+  wald.test <- function(coef_l_lm, coef_r_lm, coef_l_logm, coef_r_logm,
                    vcov_l_lm, vcov_r_lm, vcov_l_logm, vcov_r_logm) {
     test.linear <- FALSE
     test.logistic <- FALSE
@@ -227,7 +267,7 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
       } else if (test_type == "z") {
         theta <- as.numeric(effect_size_logistic)
         se <- as.numeric(sqrt(cov_effect_size_logistic))
-        c <- c_logisitc
+        c <- c_logistic
         pvalue_logistic <- switch(ha,
                                   "greater" = pnorm(as.numeric((theta - c)/se), lower.tail = FALSE),
                                   "less" = pnorm(as.numeric((theta - c)/se), lower.tail = TRUE),
@@ -283,7 +323,7 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
       } else if (test_type == "z") {
         theta <- as.numeric(effect_size_hurdle)
         se <- as.numeric(sqrt(cov_effect_size_hurdle))
-        c <- c_hurdel
+        c <- c_hurdle
         pvalue_hurdle <- switch(ha,
                                 "greater" = pnorm(as.numeric((theta - c)/se), lower.tail = FALSE),
                                 "less" = pnorm(as.numeric((theta - c)/se), lower.tail = TRUE),
@@ -326,15 +366,17 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
   }
   
   future_mapply(FUN = wald.test,
-         coef_l_lm = dt.test.all$coef_l_lm, coef_r_lm = dt.test.all$coef_r_lm,
-         coef_l_logm = dt.test.all$coef_l_logm, coef_r_logm = dt.test.all$coef_r_logm,
-         vcov_l_lm = dt.test.all$vcov_l_lm, vcov_r_lm = dt.test.all$vcov_r_lm,
-         vcov_l_logm = dt.test.all$vcov_l_logm, vcov_r_logm = dt.test.all$vcov_r_logm,
+         coef_l_lm = dt.est.all$coef_l_lm, coef_r_lm = dt.est.all$coef_r_lm,
+         coef_l_logm = dt.est.all$coef_l_logm, coef_r_logm = dt.est.all$coef_r_logm,
+         vcov_l_lm = dt.est.all$vcov_l_lm, vcov_r_lm = dt.est.all$vcov_r_lm,
+         vcov_l_logm = dt.est.all$vcov_l_logm, vcov_r_logm = dt.est.all$vcov_r_logm,
          SIMPLIFY = FALSE, future.chunk.size = chunk_size
   ) -> test.list
   
-  test.results <- rbindlist(test.list)
-  dt.test.all <- dt.test.all[, names(test.results) := test.reslts]
+  cols <- grep("^(coef_|vcov_)", colnames(dt.est.all), value = TRUE)
+  dt.test.all <- dt.est.all[, (cols) := NULL]
+  test.results <- rbindlist(test.list, fill = TRUE)
+  dt.test.all <- dt.test.all[, names(test.results) := test.results]
   
   pval_cols <- grep("^pvalue", names(dt.test.all), value = TRUE)
   if (cell_type_padj) {
