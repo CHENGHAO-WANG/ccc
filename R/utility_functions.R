@@ -269,7 +269,8 @@ fisher_combine_pvalues <- function(pvalues) {
 
 ccc_estimate <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
                      unique_levels, lmm_re, logmm_re, sandwich,
-                     sender, receiver, ligand, receptor, var_to_test = c("group", "class")) {
+                     sender, receiver, ligand, receptor, var_to_test = c("group", "class"),
+                     marginal_cores = 1L) {
   dt.est <- data.table()
   var_to_test <- var_to_test[1L]
   var_names <- paste0(var_to_test, unique_levels)
@@ -303,8 +304,8 @@ ccc_estimate <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logis
   
   if (!is.null(fit.l.logistic) && !is.null(fit.r.logistic)) {
     if (isTRUE(logmm_re)) {
-      m_l <- GLMMadaptive::marginal_coefs(fit.l.logistic, std_errors = TRUE, cores = 1L, sandwich = sandwich)
-      m_r <- GLMMadaptive::marginal_coefs(fit.r.logistic, std_errors = TRUE, cores = 1L, sandwich = sandwich)
+      m_l <- GLMMadaptive::marginal_coefs(fit.l.logistic, std_errors = TRUE, cores = marginal_cores, sandwich = sandwich)
+      m_r <- GLMMadaptive::marginal_coefs(fit.r.logistic, std_errors = TRUE, cores = marginal_cores, sandwich = sandwich)
       coef_l_logm <- m_l$betas
       coef_r_logm <- m_l$betas
       vcov_l_logm <- m_l$var_betas[var_names, var_names]

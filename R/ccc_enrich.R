@@ -1,4 +1,3 @@
-
 #' @export
 #' @rdname ccc_analysis
 
@@ -13,7 +12,7 @@ ccc_enrich <- function(expression_matrix, metadata,
                       threshold = 0, sep_detection = TRUE, sep_sample_prop = 0, sep_sample_n = 0,
                       sandwich = FALSE, control_logm = list(),
                       control_lmm = lme4::lmerControl(), control_logmm = list(),
-                      chunk_size = 10) {
+                      chunk_size = 10, marginal_cores = 1) {
   old_nthreads <- getDTthreads()
   on.exit(setDTthreads(old_nthreads), add = TRUE)
 
@@ -29,6 +28,14 @@ ccc_enrich <- function(expression_matrix, metadata,
           "See `vignette('progressr-intro')` for how to customize the progress bar settings."
         )
       }
+    }
+  }
+
+  # Check if running in parallel
+  if (future::nbrOfWorkers() > 1) {
+    if (marginal_cores != 1) {
+      message("Running in parallel with future. Forcing marginal_cores = 1 to avoid nested parallelization.")
+      marginal_cores <- 1L
     }
   }
 
@@ -396,7 +403,7 @@ ccc_enrich <- function(expression_matrix, metadata,
       fit.r.linear = fit.r.linear, fit.r.logistic = fit.r.logistic,
       unique_levels = unique_levels, lmm_re = lmm_re, logmm_re = logmm_re,
       sandwich = sandwich, sender = sender, receiver = receiver,
-      ligand = ligand, receptor = receptor, var_to_test = "class"
+      ligand = ligand, receptor = receptor, var_to_test = "class", marginal_cores = marginal_cores
     )
     ###
     if (verbose) {

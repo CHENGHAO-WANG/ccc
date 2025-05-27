@@ -44,6 +44,7 @@
 #' @param control_lmm control parameters for optimization in [lme4::lmer].
 #' @param control_logmm control parameters for optimization in [GLMMadaptive::mixed_model].
 #' @param chunk_size integer scalar. The number of communication events (each defined by a distinct combination of sender, receiver, ligand, and receptor) per chunk. Passed to the `future.chunk.size` argument of [future.apply::future_lapply()]. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.
+#' @param marginal_cores integer scalar. Number of cores to use for parallel computation in [GLMMadaptive::marginal_coefs()]. Only used if `logmm_re == TRUE`. Defaults to 1. If the code is running in parallel using the \pkg{future} package (i.e., `nbrOfWorkers() > 1`), this argument will be forced to 1 to avoid nested parallelization.
 #' @details
 #' `ccc_diff` performs differential cell-cell communication analysis. For each communication event, a hurdle model is fitted to ligand expression data in sender and another hurdle model is fitted to receptor expression data in receiver.
 #' `ccc_enrich` performs enriched cell-cell communication analysis. For each communication event, a hurdle model is fitted to ligand expression data in all cells and another hurdle model is fitted to receptor expression data in all cells.
@@ -74,6 +75,7 @@
 #'
 #' @import data.table
 #' @importFrom future.apply future_lapply future_mapply
+#' @importFrom future nbrOfWorkers
 #' @importFrom lme4 lmer fixef
 #' @importFrom GLMMadaptive mixed_model marginal_coefs
 #' @import progressr
@@ -145,7 +147,7 @@ ccc_diff <- function(expression_matrix, metadata,
                      threshold = 0, sep_detection = TRUE, sep_prop = 0, sep_n = 0,
                      sandwich = FALSE, control_logm = list(),
                      control_lmm = lme4::lmerControl(), control_logmm = list(),
-                     chunk_size = 10) {
+                     chunk_size = 10, marginal_cores = 1) {
   old_nthreads <- getDTthreads()
   on.exit(setDTthreads(old_nthreads), add = TRUE)
 
@@ -161,6 +163,14 @@ ccc_diff <- function(expression_matrix, metadata,
           "See `vignette('progressr-intro')` for how to customize the progress bar settings."
         )
       }
+    }
+  }
+
+  # Check if running in parallel
+  if (future::nbrOfWorkers() > 1) {
+    if (marginal_cores != 1) {
+      message("Running in parallel with future. Forcing marginal_cores = 1 to avoid nested parallelization.")
+      marginal_cores <- 1L
     }
   }
 
@@ -501,7 +511,7 @@ ccc_diff <- function(expression_matrix, metadata,
       unique_levels = unique_levels, lmm_re = lmm_re, logmm_re = logmm_re,
       sandwich = sandwich,
       sender = sender, receiver = receiver,
-      ligand = ligand, receptor = receptor
+      ligand = ligand, receptor = receptor, marginal_cores = marginal_cores
     )
     if (verbose) {
       p()

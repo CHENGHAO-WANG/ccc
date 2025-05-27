@@ -33,7 +33,8 @@ ccc_diff(
   control_logm = list(),
   control_lmm = lme4::lmerControl(),
   control_logmm = list(),
-  chunk_size = 10
+  chunk_size = 10,
+  marginal_cores = 1
 )
 
 ccc_enrich(
@@ -63,7 +64,8 @@ ccc_enrich(
   control_logm = list(),
   control_lmm = lme4::lmerControl(),
   control_logmm = list(),
-  chunk_size = 10
+  chunk_size = 10,
+  marginal_cores = 1
 )
 }
 \arguments{
@@ -129,6 +131,8 @@ ccc_enrich(
 \item{control_logmm}{control parameters for optimization in \link[GLMMadaptive:mixed_model]{GLMMadaptive::mixed_model}.}
 
 \item{chunk_size}{integer scalar. The number of communication events (each defined by a distinct combination of sender, receiver, ligand, and receptor) per chunk. Passed to the \code{future.chunk.size} argument of \code{\link[future.apply:future_lapply]{future.apply::future_lapply()}}. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.}
+
+\item{marginal_cores}{integer scalar. Number of cores to use for parallel computation in \code{\link[GLMMadaptive:marginal_coefs]{GLMMadaptive::marginal_coefs()}}. Only used if \code{logmm_re == TRUE}. Defaults to 1. If the code is running in parallel using the \pkg{future} package (i.e., \code{nbrOfWorkers() > 1}), this argument will be forced to 1 to avoid nested parallelization.}
 
 \item{sep_sample_prop}{numeric scalar. For each ligand/receptor gene, if it is expressed above/below \code{threshold} in all cells of more than a \code{sep_sample_prop} fraction of individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.}
 
