@@ -1,7 +1,8 @@
 utils::globalVariables(c(
   ".", "N", "V1", "cdr", "cell_id", "cell_type", "group", "id", "y", "z",
   "omnipathr", "ramilowski", "dispersion", "gene_id", "within_sample_correlation",
-  "cell_continuous", "cell_discrete", "sample_continuous", "sample_discrete"
+  "cell_continuous", "cell_discrete", "sample_continuous", "sample_discrete",
+  "sender", "receiver", "background_sep", "target_sep", "n_classes" 
 ))
 
 center_covar <- function(dt, covar) {

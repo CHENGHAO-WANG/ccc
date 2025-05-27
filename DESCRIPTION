@@ -1,7 +1,7 @@
 Package: ccc
 Type: Package
 Title: Identifying Differential Cell-Cell Communication from Single-Cell RNA-Sequencing Data
-Version: 0.2.0
+Version: 0.3.0
 Authors@R: c(
     person("Chenghao", "Wang", email = "wangchenghaochn@gmail.com", role = c("aut", "cre")),
     person("Yishu", "Zhang", role = "aut"),
@@ -23,7 +23,13 @@ Imports: lme4,
 Suggests: 
     testthat (>= 3.0.0),
     knitr,
-    rmarkdown
+    rmarkdown,
+    Rtsne,
+    ggplot2,
+    patchwork,
+    pheatmap,
+    dplyr,
+    tidyr
 Config/testthat/edition: 3
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.2
