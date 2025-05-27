@@ -5,7 +5,7 @@
 #' @param ccc_obj output of [ccc::ccc_diff()] or [ccc::ccc_enrich()].
 #' @param contrast a named numeric vector or a numeric matrix with column names. The names should match the levels of the variable being tested (specified by `group_col` argument of [ccc::ccc_diff()]; the testings are performed based on this). Only used if `ccc_obj` is the output of [ccc::ccc_diff()].
 #' @param test_type a character string for the type of test. Either "chisq" or "z". If "chisq", perform Wald Chisq tests. If "z", perform Wald Z tests. Defaults to "chisq" for `ccc_diff` and "z" for `ccc_enrich`. Must be "chisq" if `contrast` has more than one row.
-#' @param ha a character string specifying the alternative hypothesis. Let $\theta$ denote the difference in the product of ligand and receptor expression levels comparing target to background cell types (`ccc_enrich`) or specified by `contrast` (`ccc_diff`).
+#' @param ha a character string specifying the alternative hypothesis. Let \eqn{\theta} denote the difference in the product of ligand and receptor expression levels comparing target to background cell types (`ccc_enrich`) or specified by `contrast` (`ccc_diff`).
 #'  \itemize{
 #'   \item \dQuote{\code{greater}}: \eqn{\theta > c}
 #'   \item \dQuote{\code{less}}: \eqn{\theta < c}
@@ -102,7 +102,7 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
   if (!is.null(test_type)) {
     test_type <- match.arg(test_type, choices = c("chisq", "z"))
   }
-  if (is.null(ha)) {
+  if (!is.null(ha)) {
     ha <- match.arg(ha, choices = c("greater.abs", "less.abs", "greater", "less"))
   }
   if (ccc_obj$func == "ccc_diff") {
@@ -182,9 +182,17 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
     test.linear <- FALSE
     test.logistic <- FALSE
     if (!is.null(coef_l_lm) && !is.null(coef_r_lm)) {
+      coef_l_lm <- coef_l_lm[var_names]
+      coef_r_lm <- coef_r_lm[var_names]
+      vcov_l_lm <- vcov_l_lm[var_names, var_names]
+      vcov_r_lm <- vcov_r_lm[var_names, var_names]
       test.linear <- TRUE
     }
     if (!is.null(coef_l_logm) && !is.null(coef_r_logm)) {
+      coef_l_logm <- coef_l_logm[var_names]
+      coef_r_logm <- coef_r_logm[var_names]
+      vcov_l_logm <- vcov_l_logm[var_names, var_names]
+      vcov_r_logm <- vcov_r_logm[var_names, var_names]
       test.logistic <- TRUE
     }
     dt.test <- data.table()

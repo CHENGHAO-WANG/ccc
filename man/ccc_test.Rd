@@ -25,7 +25,7 @@ ccc_test(
 
 \item{test_type}{a character string for the type of test. Either "chisq" or "z". If "chisq", perform Wald Chisq tests. If "z", perform Wald Z tests. Defaults to "chisq" for \code{ccc_diff} and "z" for \code{ccc_enrich}. Must be "chisq" if \code{contrast} has more than one row.}
 
-\item{ha}{a character string specifying the alternative hypothesis. Let $\theta$ denote the difference in the product of ligand and receptor expression levels comparing target to background cell types (\code{ccc_enrich}) or specified by \code{contrast} (\code{ccc_diff}).
+\item{ha}{a character string specifying the alternative hypothesis. Let \eqn{\theta} denote the difference in the product of ligand and receptor expression levels comparing target to background cell types (\code{ccc_enrich}) or specified by \code{contrast} (\code{ccc_diff}).
 \itemize{
 \item \dQuote{\code{greater}}: \eqn{\theta > c}
 \item \dQuote{\code{less}}: \eqn{\theta < c}
