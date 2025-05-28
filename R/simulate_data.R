@@ -22,6 +22,7 @@
 #' @param baseline_log_mu_mean,baseline_log_mu_sd  Simulate baseline log mean for each gene from a normal distribution with provided mean and sd.
 #' @param phi_shape,phi_rate Simulate the reciprocal of gene-wise dispersion parameter from a Gamma distribution with provided shape and rate.
 #' @param lib_size_factor_shape,lib_size_factor_rate Simulate library size factors for each cell from a Gamma distribution with provided shape and rate. Recommend these be equal.
+#' @param allow_overlap logical specifying whether group-specific genes and cell type-specific genes can overlap. If FALSE, they must be mutually exclusive. Defaults to TRUE.
 #'
 #' @returns A list with the following elements:
 #'  \itemize{
@@ -50,7 +51,8 @@ sim_count <- function(seed = NULL, n_genes = 1000, n_cell_types = 3, cell_type_p
                       is_cc_confounder = FALSE, is_cd_confounder = FALSE, is_sc_confounder = FALSE, is_sd_confounder = FALSE,
                       baseline_log_mu_mean = 1, baseline_log_mu_sd = 0.3,
                       phi_shape = 2, phi_rate = 1,
-                      lib_size_factor_shape = 3, lib_size_factor_rate = 3) {
+                      lib_size_factor_shape = 3, lib_size_factor_rate = 3,
+                      allow_overlap = TRUE) {
   # -----------------------------
   # Setup
   # -----------------------------
@@ -299,10 +301,12 @@ sim_count <- function(seed = NULL, n_genes = 1000, n_cell_types = 3, cell_type_p
   rownames(cell_type_effects) <- all_genes
 
   available_genes <- all_genes
+  cell_type_specific_genes <- character()  # Track cell type specific genes
   for (i in seq_along(cell_types)) {
     ct <- cell_types[i]
     genes_for_ct <- sample(available_genes, n_ct_specific)
     available_genes <- setdiff(available_genes, genes_for_ct)
+    cell_type_specific_genes <- c(cell_type_specific_genes, genes_for_ct)  # Add to tracking vector
     signs <- sample(c(-1, 1),
       size = length(genes_for_ct), replace = TRUE,
       prob = c(1 - up_ct_prob[i], up_ct_prob[i])
@@ -329,8 +333,15 @@ sim_count <- function(seed = NULL, n_genes = 1000, n_cell_types = 3, cell_type_p
     stop("The total number of group-specific genes exceeds the total number of available genes. Please provide a different value for 'group_effect_specific', 'similarity', or 'sample_group'.")
   }
 
-  common_group_genes <- sample(all_genes, n_common_group)
-  available_genes <- setdiff(all_genes, common_group_genes)
+  # If not allowing overlap, exclude cell type specific genes
+  available_genes <- if (!allow_overlap) {
+    setdiff(all_genes, cell_type_specific_genes)
+  } else {
+    all_genes
+  }
+
+  common_group_genes <- sample(available_genes, n_common_group)
+  available_genes <- setdiff(available_genes, common_group_genes)
 
   group_genes_list <- vector("list", n_groups - 1)
 
