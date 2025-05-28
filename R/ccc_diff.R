@@ -135,7 +135,7 @@
 #' 
 #' @export
 #' @rdname ccc_analysis
-
+#' @order 2
 ccc_diff <- function(expression_matrix, metadata,
                      cell_id_col = "cell_id", cell_type_col = "cell_type",
                      group_col = "group", covar_col = NULL, cdr = TRUE,

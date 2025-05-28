@@ -34,7 +34,8 @@ sim_count(
   phi_shape = 2,
   phi_rate = 1,
   lib_size_factor_shape = 3,
-  lib_size_factor_rate = 3
+  lib_size_factor_rate = 3,
+  allow_overlap = TRUE
 )
 }
 \arguments{
@@ -77,6 +78,8 @@ sim_count(
 \item{phi_shape, phi_rate}{Simulate the reciprocal of gene-wise dispersion parameter from a Gamma distribution with provided shape and rate.}
 
 \item{lib_size_factor_shape, lib_size_factor_rate}{Simulate library size factors for each cell from a Gamma distribution with provided shape and rate. Recommend these be equal.}
+
+\item{allow_overlap}{logical specifying whether group-specific genes and cell type-specific genes can overlap. If FALSE, they must be mutually exclusive. Defaults to TRUE.}
 }
 \value{
 A list with the following elements:

@@ -1,6 +1,11 @@
+#' @name ccc_analysis
+#' @rdname ccc_analysis
+#' @order 1
+NULL
+
 #' @export
 #' @rdname ccc_analysis
-
+#' @order 3
 ccc_enrich <- function(expression_matrix, metadata,
                       cell_id_col = "cell_id", cell_type_col = "cell_type",
                       covar_col = NULL, cdr = TRUE,

@@ -235,6 +235,11 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
       effect_size_linear <- as.numeric(effect_size_linear)
       dt.test[, c("effect_size_linear", "pvalue_linear") := list(list(effect_size_linear), pvalue_linear)]
       dt.test[, paste0("effect_size_linear_", seq_len(nrow(contrast))) := transpose(effect_size_linear)]
+      
+      # Calculate standard errors for linear effect size
+      std_err_linear <- sqrt(diag(cov_effect_size_linear))
+      dt.test[, paste0("std_err_linear_", seq_len(nrow(contrast))) := as.list(std_err_linear)]
+      
       # Get column names
       cols_all <- names(dt.test)
       
@@ -242,8 +247,11 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
       col0_index <- which(cols_all == "effect_size_linear")
       dt.test[, effect_size_linear := NULL]
       new_cols <- paste0("effect_size_linear_", seq_len(nrow(contrast)))
+      std_err_cols <- paste0("std_err_linear_", seq_len(nrow(contrast)))
       cols_new <- names(dt.test)
-      cols_reordered <- append(cols_new[cols_new != new_cols], new_cols, after = col0_index - 1)
+      cols_reordered <- append(cols_new[!cols_new %in% c(new_cols, std_err_cols)], 
+                             c(new_cols, std_err_cols), 
+                             after = col0_index - 1)
       
       # Apply new column order
       setcolorder(dt.test, cols_reordered)  
@@ -288,6 +296,11 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
       effect_size_logistic <- as.numeric(effect_size_logistic)
       dt.test[, c("effect_size_logistic", "pvalue_logistic") := list(list(effect_size_logistic), pvalue_logistic)]
       dt.test[, paste0("effect_size_logistic_", seq_len(nrow(contrast))) := transpose(effect_size_logistic)]
+      
+      # Calculate standard errors for logistic effect size
+      std_err_logistic <- sqrt(diag(cov_effect_size_logistic))
+      dt.test[, paste0("std_err_logistic_", seq_len(nrow(contrast))) := as.list(std_err_logistic)]
+      
       # Get column names
       cols_all <- names(dt.test)
       
@@ -295,8 +308,11 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
       col0_index <- which(cols_all == "effect_size_logistic")
       dt.test[, effect_size_logistic := NULL]
       new_cols <- paste0("effect_size_logistic_", seq_len(nrow(contrast)))
+      std_err_cols <- paste0("std_err_logistic_", seq_len(nrow(contrast)))
       cols_new <- names(dt.test)
-      cols_reordered <- append(cols_new[cols_new != new_cols], new_cols, after = col0_index - 1)
+      cols_reordered <- append(cols_new[!cols_new %in% c(new_cols, std_err_cols)], 
+                             c(new_cols, std_err_cols), 
+                             after = col0_index - 1)
       
       # Apply new column order
       setcolorder(dt.test, cols_reordered)  
@@ -344,15 +360,19 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
         # 2-part p-values only available for chisq test
         test_stat_2part <- test_stat_linear + test_stat_logistic
         pvalue_2part <- pchisq(test_stat_2part, df = nrow(contrast) * 2L, lower.tail = FALSE)
-        dt.test[, pvalue_2part := pvalue_2part]
       }
       pvalue_stouffer <- stouffer_combine_pvalues(c(pvalue_linear, pvalue_logistic))
       pvalue_fisher <- fisher_combine_pvalues(c(pvalue_linear, pvalue_logistic))
       
       effect_size_hurdle <- as.numeric(effect_size_hurdle)
-      dt.test[, c("effect_size_hurdle", "pvalue_hurdle", "pvalue_stouffer", "pvalue_fisher") := 
-                list(list(effect_size_hurdle), pvalue_hurdle, pvalue_stouffer, pvalue_fisher)]
+      dt.test[, c("effect_size_hurdle", "pvalue_hurdle", "pvalue_2part", "pvalue_stouffer", "pvalue_fisher") := 
+                list(list(effect_size_hurdle), pvalue_hurdle, pvalue_2part, pvalue_stouffer, pvalue_fisher)]
       dt.test[, paste0("effect_size_hurdle_", seq_len(nrow(contrast))) := transpose(effect_size_hurdle)]
+      
+      # Calculate standard errors for hurdle effect size
+      std_err_hurdle <- sqrt(diag(cov_effect_size_hurdle))
+      dt.test[, paste0("std_err_hurdle_", seq_len(nrow(contrast))) := as.list(std_err_hurdle)]
+      
       # Get column names
       cols_all <- names(dt.test)
       
@@ -360,8 +380,11 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
       col0_index <- which(cols_all == "effect_size_hurdle")
       dt.test[, effect_size_hurdle := NULL]
       new_cols <- paste0("effect_size_hurdle_", seq_len(nrow(contrast)))
+      std_err_cols <- paste0("std_err_hurdle_", seq_len(nrow(contrast)))
       cols_new <- names(dt.test)
-      cols_reordered <- append(cols_new[cols_new != new_cols], new_cols, after = col0_index - 1)
+      cols_reordered <- append(cols_new[!cols_new %in% c(new_cols, std_err_cols)], 
+                             c(new_cols, std_err_cols), 
+                             after = col0_index - 1)
       
       # Apply new column order
       setcolorder(dt.test, cols_reordered)  
