@@ -1,7 +1,7 @@
 Package: ccc
 Type: Package
 Title: Identifying Differential Cell-Cell Communication from Single-Cell RNA-Sequencing Data
-Version: 0.3.0
+Version: 0.3.1
 Authors@R: c(
     person("Chenghao", "Wang", email = "wangchenghaochn@gmail.com", role = c("aut", "cre")),
     person("Yishu", "Zhang", role = "aut"),

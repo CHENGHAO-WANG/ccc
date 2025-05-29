@@ -363,6 +363,8 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
         # 2-part p-values only available for chisq test
         test_stat_2part <- test_stat_linear + test_stat_logistic
         pvalue_2part <- pchisq(test_stat_2part, df = nrow(contrast) * 2L, lower.tail = FALSE)
+      } else if (test_type == "z") {
+        pvalue_2part <- NA  # Not applicable for z-test
       }
       pvalue_stouffer <- stouffer_combine_pvalues(c(pvalue_linear, pvalue_logistic))
       pvalue_fisher <- fisher_combine_pvalues(c(pvalue_linear, pvalue_logistic))

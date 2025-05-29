@@ -89,8 +89,11 @@ compute_group_stats <- function(dt, y_col = "y", group_col = "group", z_col = "z
   # Compute stats for groups that are present in the data
   stats_dt <- dt[, .(
     mean = mean(get(y_col)),
+    mean_se = sd(get(y_col))/sqrt(.N),
     positive_mean = if (any(get(z_col) == 1)) mean(get(y_col)[get(z_col) == 1]) else 0,
-    expression_rate = mean(get(z_col) == 1)
+    positive_mean_se = if (any(get(z_col) == 1)) sd(get(y_col)[get(z_col) == 1])/sqrt(sum(get(z_col) == 1)) else 0,
+    expression_rate = mean(get(z_col) == 1),
+    expression_rate_se = sqrt(mean(get(z_col) == 1) * (1 - mean(get(z_col) == 1))/sqrt(.N))
   ), by = get(group_col)]
 
   setnames(stats_dt, "get", group_col)
