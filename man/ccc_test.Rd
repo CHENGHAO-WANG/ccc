@@ -105,4 +105,5 @@ b.result2 <- ccc_test(b, test_type = "z", ha = "greater",
     c_linear = 0.1, c_logistic = 0.1, c_hurdle = 0.1)
 head(b.result2)
 }
+
 }

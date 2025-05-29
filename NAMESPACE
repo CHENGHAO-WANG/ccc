@@ -2,6 +2,7 @@
 
 export(ccc_diff)
 export(ccc_enrich)
+export(ccc_test)
 export(log_normalize)
 export(sim_count)
 export(sim_lr)

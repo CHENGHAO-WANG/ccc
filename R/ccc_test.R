@@ -76,6 +76,9 @@
 #'     c_linear = 0.1, c_logistic = 0.1, c_hurdle = 0.1)
 #' head(b.result2)
 #' }
+#' 
+#' @export
+
 ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
                      c_linear = 0, c_logistic = 0, c_hurdle = 0,
                      verbose = TRUE, padj_method = "BH", cell_type_padj = TRUE,
