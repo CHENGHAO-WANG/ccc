@@ -36,7 +36,7 @@ Only used if \code{test_type = "z"}. Defaults to "greater" for \code{ccc_enrich}
 
 \item{c_linear, c_logistic, c_hurdle}{numeric scalar. \code{c_linear} is for the tests on the linear component, \code{c_logistic} is for the tests on the logistic component, and \code{c_hurdle} is for the tests on the hurdle model. Default to 0. Must be non-negative for \code{ha = "greater.abs"} and \code{ha = "less.abs"}.}
 
-\item{verbose}{logical scalar. If \code{TRUE} (the default), display a progress bar. The default handler is "progress". This package uses the \pkg{progressr} framework for progress reporting, so users can customize the progress bar. See \code{\link[progressr:handlers]{progressr::handlers()}} for customizing progress bar behavior.}
+\item{verbose}{logical scalar. If \code{TRUE} (the default), display a progress bar. The default handler is "progress". This package uses the \pkg{progressr} framework for progress reporting, so users can customize the progress bar. See \code{\link[progressr:handlers]{progressr::handlers()}} for customizing progress bar behavior. Note that progress bars are not displayed in non-interactive mode or R markdown.}
 
 \item{padj_method}{a character string for multiple testing correction method. This is passed to \code{\link[stats:p.adjust]{stats::p.adjust()}}. Defaults to "BH".}
 

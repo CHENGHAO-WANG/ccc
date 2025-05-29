@@ -28,7 +28,7 @@
 #'    \item \dQuote{\code{min_avg_gene}}: the subunit gene with the minimum average expression is selected.
 #'    \item \dQuote{\code{min_rate_gene}}: the subunit gene with the minimum expression rate is selected. The expression rate for a gene is calculated as the number of cells with expression level above `threshold` divided by the total number of cells.
 #'  }
-#' @param verbose logical scalar. If `TRUE` (the default), display a progress bar. The default handler is "progress". This package uses the \pkg{progressr} framework for progress reporting, so users can customize the progress bar. See [progressr::handlers()] for customizing progress bar behavior.
+#' @param verbose logical scalar. If `TRUE` (the default), display a progress bar. The default handler is "progress". This package uses the \pkg{progressr} framework for progress reporting, so users can customize the progress bar. See [progressr::handlers()] for customizing progress bar behavior. Note that progress bars are not displayed in non-interactive mode or R markdown.
 #' @param min_cell integer scalar. Exclude cell types with fewer than `min_cell` cells from the analysis. Defaults to 10.
 #' @param min_pct numeric scalar. Only test ligand-receptor pairs that are expressed above `threshold` in a minimum fraction of `min_pct` cells for `large_n` individuals/samples in sender and receiver cell types respectively. Defaults to 0.01.
 #' @param large_n integer scalar. Number of individuals/samples that are considered to be "large". Defaults to 2.
@@ -44,7 +44,7 @@
 #' @param control_lmm control parameters for optimization in [lme4::lmer].
 #' @param control_logmm control parameters for optimization in [GLMMadaptive::mixed_model].
 #' @param chunk_size integer scalar. The number of communication events (each defined by a distinct combination of sender, receiver, ligand, and receptor) per chunk. Passed to the `future.chunk.size` argument of [future.apply::future_lapply()]. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.
-#' @param marginal_cores integer scalar. Number of cores to use for parallel computation in [GLMMadaptive::marginal_coefs()]. Only used if `logmm_re == TRUE`. Defaults to 1. If the code is running in parallel using the \pkg{future} package (i.e., `nbrOfWorkers() > 1`), this argument will be forced to 1 to avoid nested parallelization.
+#' @param marginal_cores integer scalar. Number of cores to use for parallel computation in [GLMMadaptive::marginal_coefs()]. Only used if `logmm_re == TRUE`. Defaults to 1. If the code is running in parallel using the \pkg{future} package (i.e., `nbrOfWorkers() > 1`), this argument will be forced to 1 to avoid nested parallelism.
 #' @details
 #' `ccc_diff` performs differential cell-cell communication analysis. For each communication event, a hurdle model is fitted to ligand expression data in sender and another hurdle model is fitted to receptor expression data in receiver.
 #' `ccc_enrich` performs enriched cell-cell communication analysis. For each communication event, a hurdle model is fitted to ligand expression data in all cells and another hurdle model is fitted to receptor expression data in all cells.
@@ -154,7 +154,7 @@ ccc_diff <- function(expression_matrix, metadata,
   assertthat::assert_that(assertthat::is.flag(verbose))
 
   if (verbose) {
-    if (interactive()) {
+    if (interactive() && isFALSE(getOption("rstudio.notebook.executing"))) {
       if (!handlers(global = NA)) {
         handlers(global = TRUE)
         handlers("progress")
@@ -169,7 +169,7 @@ ccc_diff <- function(expression_matrix, metadata,
   # Check if running in parallel
   if (future::nbrOfWorkers() > 1) {
     if (marginal_cores != 1) {
-      message("Running in parallel with future. Forcing marginal_cores = 1 to avoid nested parallelization.")
+      message("Running in parallel with future. Forcing marginal_cores = 1 to avoid nested parallelism.")
       marginal_cores <- 1L
     }
   }

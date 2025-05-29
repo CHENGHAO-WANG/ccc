@@ -24,7 +24,7 @@ ccc_enrich <- function(expression_matrix, metadata,
   assertthat::assert_that(assertthat::is.flag(verbose))
 
   if (verbose) {
-    if (interactive()) {
+    if (interactive() && isFALSE(getOption("rstudio.notebook.executing"))) {
       if (!handlers(global = NA)) {
         handlers(global = TRUE)
         handlers("progress")
@@ -39,7 +39,7 @@ ccc_enrich <- function(expression_matrix, metadata,
   # Check if running in parallel
   if (future::nbrOfWorkers() > 1) {
     if (marginal_cores != 1) {
-      message("Running in parallel with future. Forcing marginal_cores = 1 to avoid nested parallelization.")
+      message("Running in parallel with future. Forcing marginal_cores = 1 to avoid nested parallelism.")
       marginal_cores <- 1L
     }
   }

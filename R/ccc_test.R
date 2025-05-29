@@ -14,7 +14,7 @@
 #'  }
 #' Only used if `test_type = "z"`. Defaults to "greater" for `ccc_enrich`. \eqn{c} is specified using `c_linear`, `c_logistic`, and `c_hurdle` arguments.
 #' @param c_linear,c_logistic,c_hurdle numeric scalar. `c_linear` is for the tests on the linear component, `c_logistic` is for the tests on the logistic component, and `c_hurdle` is for the tests on the hurdle model. Default to 0. Must be non-negative for `ha = "greater.abs"` and `ha = "less.abs"`.
-#' @param verbose logical scalar. If `TRUE` (the default), display a progress bar. The default handler is "progress". This package uses the \pkg{progressr} framework for progress reporting, so users can customize the progress bar. See [progressr::handlers()] for customizing progress bar behavior.
+#' @param verbose logical scalar. If `TRUE` (the default), display a progress bar. The default handler is "progress". This package uses the \pkg{progressr} framework for progress reporting, so users can customize the progress bar. See [progressr::handlers()] for customizing progress bar behavior. Note that progress bars are not displayed in non-interactive mode or R markdown.
 #' @param padj_method a character string for multiple testing correction method. This is passed to [stats::p.adjust()]. Defaults to "BH".
 #' @param cell_type_padj logical scalar. If `TRUE` (the default), adjust p-values for each sender-receiver pair.
 #' @param chunk_size integer scalar. The number of communication pairs (each defined by a distinct combination of sender, receiver, ligand, and receptor) per chunk. Passed to the `future.chunk.size` argument of [future.apply::future_mapply()]. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.
@@ -87,7 +87,7 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
   assertthat::assert_that(assertthat::is.flag(verbose))
   
   if (verbose) {
-    if (interactive()) {
+    if (interactive() && isFALSE(getOption("rstudio.notebook.executing"))) {
       if (!handlers(global = NA)) {
         handlers(global = TRUE)
         handlers("progress")
