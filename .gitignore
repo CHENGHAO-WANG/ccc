@@ -2,3 +2,7 @@
 .Rhistory
 .RData
 .Ruserdata
+vignettes/*.html
+inst/doc
+/doc/
+/Meta/

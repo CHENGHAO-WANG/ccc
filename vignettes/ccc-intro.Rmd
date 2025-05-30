@@ -1,0 +1,598 @@
+---
+title: "Introduction to `ccc`: Differential Cell-Cell Communication Analysis"
+author: "Chenghao Wang"
+date: "`r Sys.Date()`"
+output: 
+  rmarkdown::html_vignette:
+    toc: true
+    number_sections: true
+    toc_depth: 3
+vignette: >
+  %\VignetteIndexEntry{Introduction to ccc}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+# Overview
+
+The `ccc` package provides tools for identifying differential cell-cell communication from single-cell RNA-sequencing data. This vignette demonstrates how to use the main functions of the package to analyze cell-cell communication patterns across different conditions.
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 6,
+  fig.align = "center"
+)
+```
+
+```{r, message = FALSE,  warning = FALSE}
+# load packages
+library(ccc)
+library(Rtsne)
+library(ggplot2)
+library(patchwork)
+library(pheatmap)
+library(dplyr)
+library(tidyr)
+```
+
+# Differential Cell-Cell Communication Analysis
+
+## Data simulation and exploratory data analysis
+
+```{r}
+# simulate data
+data.sim1 <- sim_count(seed = 1, n_genes = 1000, sample_group = c(3, 3), 
+                       cells_per_sample = rep(100, 6),
+                       grp_specific_prop = 0.3, ct_specific_prop = 0.1)
+
+expression_matrix <- log_normalize(data.sim1$counts)
+metadata <- data.sim1$metadata
+gene_info <- data.sim1$gene_info
+```
+
+```{r}
+metadata %>%
+  count(sample, cell_type) %>%
+  pivot_wider(names_from = cell_type, values_from = n, values_fill = 0)
+```
+
+
+```{r}
+set.seed(42)
+tsne_out <- Rtsne(t(expression_matrix), dims = 2, perplexity = 30, pca = TRUE, pca_scale = TRUE)
+
+tsne_df <- data.frame(
+  TSNE1 = tsne_out$Y[, 1],
+  TSNE2 = tsne_out$Y[, 2]
+)
+tsne_df$cell_type <- metadata$cell_type
+tsne_df$group <- metadata$group
+tsne_df$sample <- metadata$sample
+```
+
+```{r}
+p1 <- ggplot(tsne_df, aes(x = TSNE1, y = TSNE2, color = cell_type)) +
+  geom_point(alpha = 0.7) +
+  theme_minimal() +
+  labs(color = "Cell Type")
+
+p2 <- ggplot(tsne_df, aes(x = TSNE1, y = TSNE2, color = group)) +
+  geom_point(alpha = 0.7) +
+  theme_minimal() +
+  labs(color = "Group")
+
+p3 <- ggplot(tsne_df, aes(x = TSNE1, y = TSNE2, color = sample)) +
+  geom_point(alpha = 0.7) +
+  theme_minimal() +
+  labs(color = "Sample")
+
+# Combine side by side
+p1 + p2 + p3 + plot_layout(ncol = 2)
+```
+
+```{r}
+metadata_sorted <- metadata[order(metadata$cell_type, metadata$sample), ]
+expression_matrix_sorted <- expression_matrix[, metadata_sorted$cell_id]
+
+# Subset genes that are differentially expressed across cell types or groups and have high expression mean
+var_genes <- gene_info %>% 
+  filter(CT1_logfc != 0 | CT2_logfc != 0 | CT3_logfc != 0 | grp2_logfc != 0) %>%
+  filter(gene_id %in% rownames(expression_matrix)[rowMeans(expression_matrix) > 1.5]) %>% 
+  pull(gene_id)
+expression_matrix_top <- expression_matrix_sorted[var_genes, ]
+
+rownames(metadata_sorted) <- metadata_sorted$cell_id
+annotation_col <- metadata_sorted[, c("sample", "cell_type")]
+cell_type_colors <- c(
+  "CT1" = "#1b9e77",
+  "CT2" = "#d95f02",
+  "CT3" = "#7570b3"
+)
+sample_colors <- c(
+  "S1" = "#a1d99b",  
+  "S2" = "#41ab5d",  
+  "S3" = "#005a32",  
+
+  "S4" = "#dadaeb",  
+  "S5" = "#9e9ac8",  
+  "S6" = "#54278f"  
+)
+annotation_colors <- list(
+  cell_type = cell_type_colors,
+  sample = sample_colors
+)
+pheatmap(expression_matrix_top,
+         annotation_col = annotation_col,
+         annotation_colors = annotation_colors,
+         show_rownames = FALSE,
+         show_colnames = FALSE,
+         scale = "row",  # z-score by gene
+         cluster_cols = FALSE)
+```
+
+```{r}
+  # Calculate CDR for each cell
+  cdr <- colMeans(expression_matrix > 0)
+  
+  # Perform PCA
+  pca_result <- prcomp(t(expression_matrix), center = TRUE, scale. = TRUE)
+  
+  # Create data frame with PCA results and metadata
+  pca_df <- data.frame(
+    PC1 = pca_result$x[, 1],
+    PC2 = pca_result$x[, 2],
+    CDR = cdr,
+    cell_type = metadata$cell_type,
+    group = metadata$group,
+    sample = metadata$sample
+  )
+  group_colors <- c("grp1" = "green3", "grp2" = "purple3")
+  # Create plots with different colorings
+  # PC1 vs CDR
+  p1 <- ggplot(pca_df, aes(x = PC1, y = CDR, color = cell_type)) +
+    geom_point(alpha = 0.7) +
+    theme_minimal() +
+    labs(title = "PC1 vs CDR", color = "Cell Type") +
+    scale_color_manual(values = cell_type_colors)
+  
+  p2 <- ggplot(pca_df, aes(x = PC1, y = CDR, color = group)) +
+    geom_point(alpha = 0.7) +
+    theme_minimal() +
+    labs(title = "PC1 vs CDR", color = "Group") +
+    scale_color_manual(values = group_colors)
+  
+  # PC2 vs CDR
+  p3 <- ggplot(pca_df, aes(x = PC2, y = CDR, color = cell_type)) +
+    geom_point(alpha = 0.7) +
+    theme_minimal() +
+    labs(title = "PC2 vs CDR", color = "Cell Type") +
+    scale_color_manual(values = cell_type_colors)
+  
+  p4 <- ggplot(pca_df, aes(x = PC2, y = CDR, color = group)) +
+    geom_point(alpha = 0.7) +
+    theme_minimal() +
+    labs(title = "PC2 vs CDR", color = "Group") +
+    scale_color_manual(values = group_colors)
+  
+  # Combine all plots
+  (p1 + p2) / (p3 + p4)
+```
+
+```{r}
+ggplot(pca_df, aes(x = CDR, fill = group, color = group)) +
+  geom_histogram(aes(y = after_stat(density)), alpha = 0.5, position = "identity", bins = 30) +
+  geom_density(alpha = 0.7, fill = NA, adjust = 1) +
+  theme_minimal() +
+  labs(title = "CDR Distribution by Group",
+       x = "Cellular Detection Rate",
+       y = "Density") +
+  scale_fill_manual(values = group_colors) +
+  scale_color_manual(values = group_colors)
+```
+
+```{r}
+# Randomly sample 20 genes
+set.seed(42)
+sampled_genes <- sample(rownames(expression_matrix), 20)
+
+# Create a data frame for all genes
+plot_df <- data.frame(
+  expression = numeric(),
+  group = character(),
+  gene = character()
+)
+
+# Combine data for all genes
+for(gene in sampled_genes) {
+  gene_expr <- expression_matrix[gene, ]
+  gene_df <- data.frame(
+    expression = gene_expr,
+    group = metadata$group,
+    gene = gene
+  )
+  plot_df <- rbind(plot_df, gene_df)
+}
+
+# Create faceted plot
+ggplot(plot_df, aes(x = expression, fill = group, color = group)) +
+  geom_histogram(aes(y = after_stat(density)), alpha = 0.5, position = "identity", bins = 30) +
+  geom_density(alpha = 0.7, fill = NA) +
+  facet_wrap(~gene, ncol = 4, scales = "free_y") +
+  theme_minimal() +
+  labs(x = "Expression",
+       y = "Density") +
+  scale_fill_manual(values = group_colors) +
+  scale_color_manual(values = group_colors) +
+  theme(strip.text = element_text(size = 8),
+        axis.text = element_text(size = 6))
+```
+
+```{r}
+# Create a data frame for all genes with sample information
+plot_df_samples <- data.frame(
+  expression = numeric(),
+  sample = character(),
+  gene = character()
+)
+
+# Combine data for all genes
+for(gene in sampled_genes) {
+  gene_expr <- expression_matrix[gene, ]
+  gene_df <- data.frame(
+    expression = gene_expr,
+    sample = metadata$sample,
+    gene = gene
+  )
+  plot_df_samples <- rbind(plot_df_samples, gene_df)
+}
+
+# Create faceted plot for samples
+ggplot(plot_df_samples, aes(x = expression, color = sample)) +
+  geom_density(alpha = 0.7) +
+  facet_wrap(~gene, ncol = 4, scales = "free_y") +
+  theme_minimal() +
+  labs(x = "Expression",
+       y = "Density") +
+  scale_color_manual(values = sample_colors) +
+  theme(strip.text = element_text(size = 8),
+        axis.text = element_text(size = 6))
+```
+
+```{r}
+# Create a data frame for all genes with cell type information
+plot_df_celltypes <- data.frame(
+  expression = numeric(),
+  cell_type = character(),
+  gene = character()
+)
+
+# Combine data for all genes
+for(gene in sampled_genes) {
+  gene_expr <- expression_matrix[gene, ]
+  gene_df <- data.frame(
+    expression = gene_expr,
+    cell_type = metadata$cell_type,
+    gene = gene
+  )
+  plot_df_celltypes <- rbind(plot_df_celltypes, gene_df)
+}
+
+# Create faceted plot for cell types
+ggplot(plot_df_celltypes, aes(x = expression, fill = cell_type, color = cell_type)) +
+  geom_histogram(aes(y = after_stat(density)), alpha = 0.5, position = "identity", bins = 30) +
+  geom_density(alpha = 0.7, fill = NA) +
+  facet_wrap(~gene, ncol = 4, scales = "free_y") +
+  theme_minimal() +
+  labs(x = "Expression",
+       y = "Density") +
+  scale_fill_manual(values = cell_type_colors) +
+  scale_color_manual(values = cell_type_colors) +
+  theme(strip.text = element_text(size = 8),
+        axis.text = element_text(size = 6))
+```
+
+## Differential Cell-Cell Communication Analysis with `ccc` Package
+
+```{r}
+ligands <- paste0("G", 1:500)
+receptors <- paste0("G", 501:1000)
+lrdb <- sim_lr(seed = 200, genes.l = ligands, genes.r = receptors, n_lr = 20)
+```
+```{r, eval = FALSE}
+a <- ccc_diff(expression_matrix = expression_matrix, metadata = metadata,
+              id_col = "sample", lr = lrdb, sender = "CT1", receiver = "CT2",
+              lmm_re = TRUE, logmm_re = TRUE, marginal_cores = 2L)
+```
+```{r save results, eval = FALSE, echo = FALSE}
+saveRDS(a, file = "./diff_a.rds")
+```
+```{r load results, echo = FALSE}
+a <- readRDS("./diff_a.rds")
+```
+```{r}
+a.res <- ccc_test(ccc_obj = a, contrast = c(grp1 = -1, grp2 = 1))
+```
+
+```{r, fig.height = 8}
+# Create a data frame for plotting
+plot_data <- a.res %>%
+  # Create ligand-receptor labels
+  mutate(lr_pair = paste(ligand, receptor, sep = "-")) %>%
+  # Select relevant columns and pivot to long format
+  select(lr_pair, starts_with("pvalue_")) %>%
+  pivot_longer(cols = starts_with("pvalue_"),
+               names_to = "p_type",
+               values_to = "p_value") %>%
+  # Calculate -log10(p-value)
+  mutate(neg_log10_p = -log10(p_value)) %>%
+  # Convert p_type to factor to maintain original column order
+  mutate(p_type = factor(p_type, levels = names(select(a.res, starts_with("pvalue_")))))
+
+# Create the plot
+ggplot(plot_data, aes(x = lr_pair, y = neg_log10_p)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~p_type, ncol = 1, scales = "fixed") +
+  scale_x_discrete(position = "top") +
+  theme_minimal() +
+  theme(
+    plot.margin = margin(r = 60),
+    axis.text.x = element_text(angle = 45, hjust = 0, size = 8),
+    strip.text = element_text(size = 10),
+    panel.grid.major.x = element_line(color = "gray90"),  # Add vertical grid lines
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major.y = element_line(color = "gray90"),  # Keep horizontal grid lines
+    panel.grid.minor.y = element_blank()
+  ) +
+  labs(
+    x = "Ligand-Receptor Pair",
+    y = "-log10(p-value)"
+  )
+```
+
+### Impact of random effects
+
+```{r}
+a_noRE <- ccc_diff(expression_matrix = expression_matrix, metadata = metadata,
+              id_col = NULL, lr = lrdb, sender = "CT1", receiver = "CT2",
+              lmm_re = FALSE, logmm_re = FALSE, marginal_cores = 2L
+              )
+a_lmRE <- ccc_diff(expression_matrix = expression_matrix, metadata = metadata,
+              id_col = "sample", lr = lrdb, sender = "CT1", receiver = "CT2",
+              lmm_re = TRUE, logmm_re = FALSE, marginal_cores = 2L
+              )
+
+```
+```{r, eval = FALSE}
+a_logmRE <- ccc_diff(expression_matrix = expression_matrix, metadata = metadata,
+              id_col = "sample", lr = lrdb, sender = "CT1", receiver = "CT2",
+              lmm_re = FALSE, logmm_re = TRUE, marginal_cores = 2L
+              )
+```
+```{r save results, eval = FALSE, echo = FALSE}
+saveRDS(a_logmRE, file = "./diff_a_logmRE.rds")
+```
+```{r load results, echo = FALSE}
+a_logmRE <- readRDS("./diff_a_logmRE.rds")
+```
+```{r}
+a_noRE.res <- ccc_test(ccc_obj = a_noRE, contrast = c(grp1 = -1, grp2 = 1))
+a_lmRE.res <- ccc_test(ccc_obj = a_lmRE, contrast = c(grp1 = -1, grp2 = 1))
+a_logmRE.res <- ccc_test(ccc_obj = a_logmRE, contrast = c(grp1 = -1, grp2 = 1))
+```
+
+```{r}
+# Combine p-values from different models
+pvalue_df <- data.frame(
+  ligand = a.res$ligand,
+  receptor = a.res$receptor,
+  base_linear = a.res$pvalue_linear,
+  base_logistic = a.res$pvalue_logistic,
+  base_hurdle = a.res$pvalue_hurdle,
+  base_2part = a.res$pvalue_2part,
+  base_stouffer = a.res$pvalue_stouffer,
+  base_fisher = a.res$pvalue_fisher,
+  noRE_linear = a_noRE.res$pvalue_linear,
+  noRE_logistic = a_noRE.res$pvalue_logistic,
+  noRE_hurdle = a_noRE.res$pvalue_hurdle,
+  noRE_2part = a_noRE.res$pvalue_2part,
+  noRE_stouffer = a_noRE.res$pvalue_stouffer,
+  noRE_fisher = a_noRE.res$pvalue_fisher,
+  lmRE_linear = a_lmRE.res$pvalue_linear,
+  lmRE_logistic = a_lmRE.res$pvalue_logistic,
+  lmRE_hurdle = a_lmRE.res$pvalue_hurdle,
+  lmRE_2part = a_lmRE.res$pvalue_2part,
+  lmRE_stouffer = a_lmRE.res$pvalue_stouffer,
+  lmRE_fisher = a_lmRE.res$pvalue_fisher,
+  logmRE_linear = a_logmRE.res$pvalue_linear,
+  logmRE_logistic = a_logmRE.res$pvalue_logistic,
+  logmRE_hurdle = a_logmRE.res$pvalue_hurdle,
+  logmRE_2part = a_logmRE.res$pvalue_2part,
+  logmRE_stouffer = a_logmRE.res$pvalue_stouffer,
+  logmRE_fisher = a_logmRE.res$pvalue_fisher
+) %>%
+  # Create ligand-receptor pair labels
+  mutate(pair = paste(ligand, receptor, sep = "-"))
+
+# Reshape data for plotting
+pvalue_long <- pvalue_df %>%
+  pivot_longer(
+    cols = -c(ligand, receptor, pair),
+    names_to = c("model", "test"),
+    names_sep = "_",
+    values_to = "pvalue"
+  )
+
+# Check the unique values in model and test columns
+cat("Unique models:\n")
+print(unique(pvalue_long$model))
+cat("\nUnique tests:\n")
+print(unique(pvalue_long$test))
+
+# Check a sample of the data
+cat("\nSample of the data:\n")
+print(head(pvalue_long))
+```
+
+### Both ligand and receptor are non-DE genes
+
+```{r}
+# simulate binary ligand-receptor pairs using non-DE genes
+nonDEG <- gene_info %>% 
+  filter(CT1_logfc == 0 & CT2_logfc == 0 & CT3_logfc == 0 & grp2_logfc == 0) %>%
+  pull(gene_id)
+set.seed(77)
+ligands <- sample(nonDEG, 100)
+receptors <- sample(setdiff(nonDEG, ligands), 100)
+lrdb.nonDEG <- sim_lr(seed = 1, genes.l = ligands, genes.r = receptors, dimer = 0, trimer = 0, n_lr = 50)
+```
+```{r, eval = FALSE}
+a <- ccc_diff(expression_matrix = expression_matrix, metadata = metadata,
+              id_col = "sample", lr = lrdb.nonDEG, 
+              sender = "CT1", receiver = "CT2",
+              verbose = FALSE, marginal_cores = 2L
+              )
+
+```
+
+```{r}
+
+```
+
+
+
+# Enrichment Analysis
+
+```{r}
+# Check structure of the data frames
+str(a.res)
+str(a_noRE.res)
+str(a_lmRE.res)
+str(a_logmRE.res)
+
+# Print column names
+cat("\nColumn names in a.res:\n")
+names(a.res)
+cat("\nColumn names in a_noRE.res:\n")
+names(a_noRE.res)
+cat("\nColumn names in a_lmRE.res:\n")
+names(a_lmRE.res)
+cat("\nColumn names in a_logmRE.res:\n")
+names(a_logmRE.res)
+```
+
+```{r}
+# Create faceted line plot
+# First, create a factor with the desired order of test types
+pvalue_long$test <- factor(pvalue_long$test, 
+                          levels = c("linear", "logistic", "hurdle", "2part", "stouffer", "fisher"))
+
+ggplot(pvalue_long, aes(x = pair, y = -log10(pvalue), color = model, group = model)) +
+  geom_line(alpha = 0.5) +
+  geom_point(size = 2) +
+  facet_wrap(~test, ncol = 1) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+    strip.text = element_text(size = 10),
+    legend.position = "bottom",
+    panel.grid.minor = element_blank()
+  ) +
+  labs(
+    x = "Ligand-Receptor Pair",
+    y = "-log10(p-value)",
+    title = "Comparison of P-values Across Different Models and Tests",
+    color = "Model"
+  ) +
+  scale_color_manual(values = c("base" = "#E41A1C", 
+                               "noRE" = "#377EB8", 
+                               "lmRE" = "#4DAF4A", 
+                               "logmRE" = "#984EA3")) +
+  # Add a horizontal line at p=0.05 (-log10(0.05) ≈ 1.3)
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "gray50")
+
+# Print summary statistics for each model and test
+pvalue_long %>%
+  group_by(model, test) %>%
+  summarise(
+    mean_neglog10p = mean(-log10(pvalue)),
+    min_neglog10p = min(-log10(pvalue)),
+    max_neglog10p = max(-log10(pvalue)),
+    .groups = "drop"
+  ) %>%
+  print(n = Inf)
+```
+
+```{r}
+# Function to create faceted scatter plots for each test type
+create_test_plots <- function(data, test_type) {
+  # Filter data for the specific test
+  plot_data <- data %>%
+    filter(test == test_type) %>%
+    select(pair, model, pvalue) %>%
+    pivot_wider(names_from = model, values_from = pvalue)
+  
+  # Create plots for each model comparison
+  plots <- list()
+  for(model in c("noRE", "lmRE", "logmRE")) {
+    # Calculate correlation
+    cor_val <- cor(-log10(plot_data$base), -log10(plot_data[[model]]), method = "pearson")
+    
+    # Create plot
+    plots[[model]] <- ggplot(plot_data, aes(x = -log10(base), y = -log10(.data[[model]]))) +
+      geom_point(alpha = 0.6) +
+      geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray50") +
+      geom_smooth(method = "lm", se = FALSE, color = "red") +
+      theme_minimal() +
+      labs(
+        x = "base (-log10 p-value)",
+        y = paste0(model, " (-log10 p-value)"),
+        title = paste0("r = ", round(cor_val, 3))
+      ) +
+      theme(
+        plot.title = element_text(hjust = 0.5, size = 10),
+        axis.title = element_text(size = 8)
+      )
+  }
+  
+  # Combine the three plots for this test type
+  wrap_elements(wrap_plots(plots, ncol = 3) +
+    plot_annotation(
+      title = paste("Test Type:", test_type),
+      theme = theme(plot.title = element_text(hjust = 0.5, size = 12))
+    ))
+}
+
+# Create plots for each test type
+test_types <- unique(pvalue_long$test)
+test_plots <- lapply(test_types, function(test_type) {
+  create_test_plots(pvalue_long, test_type)
+})
+
+# Combine all test plots vertically
+combined_plot <- wrap_plots(test_plots, ncol = 1) +
+  plot_annotation(
+    title = "Comparison of P-values Across Different Models and Tests",
+    theme = theme(plot.title = element_text(hjust = 0.5, size = 14))
+  )
+
+# Display the combined plot
+print(combined_plot)
+
+# Print summary statistics for each model and test
+pvalue_long %>%
+  group_by(model, test) %>%
+  summarise(
+    mean_neglog10p = mean(-log10(pvalue)),
+    min_neglog10p = min(-log10(pvalue)),
+    max_neglog10p = max(-log10(pvalue)),
+    .groups = "drop"
+  ) %>%
+  print(n = Inf)
+```
+
+
+
+
