@@ -8,6 +8,7 @@
 \subsection{\code{lr.sim}}{
 
 A data frame with 20 rows and 2 columns: \code{ligand} and \code{receptor}.
+For a multi-subunit ligand/receptor, the gene symbols of all subunits are joined by \verb{_}, such as \code{"G907_G934"}.
 }
 }
 \source{

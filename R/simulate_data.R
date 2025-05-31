@@ -9,7 +9,7 @@
 #' @param sample_group a vector specifying the number of samples in each group. The length of this vector specifies the total number of groups. The first group is considered as the reference group.
 #' @param cells_per_sample a vector of length `sum(sample_group)` specifying the number of cells in each sample.
 #' @param re_prop numeric specifies the proportion of genes with sample-level random intercepts.
-#' @param re_sigma_shape,re_sigma_rate Simulate gene-wise standard deviation for sample-level random intercepts from a inverse Gamma distribution with provided shape and rate.
+#' @param re_var_shape,re_var_rate Simulate gene-wise variance for sample-level random intercepts from a inverse Gamma distribution with provided shape and rate.
 #' @param grp_specific_prop numeric specifies the proportions of differentially expressed (DE) genes between each non-reference group and the reference group.
 #' @param grp_similarity numeric in \eqn{[0, 1]} specifies the overlap across the DE genes in each non-reference group.
 #' @param avg_logfc a vector of length `length(sample_group) - 1`. Specifies the average log fold change for each non-reference group compared to the reference group.
@@ -19,16 +19,16 @@
 #' @param up_ct_prob a vector of length `n_cell_types`. Specifies the probabilities of up-regulation in each cell type.
 #' @param cell_cont_prop,cell_disc_prop,sample_cont_prop,sample_disc_prop proportions of genes associated with cell-level continuous covariate, cell-level discrete covariate, sample-level continuous covariate, and sample-level discrete covariate respectively. Default to 0.
 #' @param is_cc_confounder,is_cd_confounder,is_sc_confounder,is_sd_confounder logical specifying whether each covariate and group effects are confounded. Default to FALSE.
-#' @param baseline_log_mu_mean,baseline_log_mu_sd  Simulate baseline log mean for each gene from a normal distribution with provided mean and sd.
-#' @param phi_shape,phi_rate Simulate the reciprocal of gene-wise dispersion parameter from a Gamma distribution with provided shape and rate.
-#' @param lib_size_factor_shape,lib_size_factor_rate Simulate library size factors for each cell from a Gamma distribution with provided shape and rate. Recommend these be equal.
+#' @param baseline_log_mu_mean,baseline_log_mu_sd  simulate baseline log mean for each gene from a normal distribution with provided mean and sd.
+#' @param phi_alpha0,phi_alpha1,phi_sigma parameters for mean-dependent dispersion. For each gene, dispersion is calculated as \eqn{exp(log(phi\_alpha0 + phi\_alpha1/avg\_mu) + N(0, phi\_sigma^2))}, where avg_mu is the gene-wise average expression across all cells.
+#' @param lib_size_factor_shape,lib_size_factor_rate simulate library size factors for each cell from a Gamma distribution with provided shape and rate. Recommend these be equal.
 #' @param allow_overlap logical specifying whether group-specific genes and cell type-specific genes can overlap. If FALSE, they must be mutually exclusive. Defaults to TRUE.
 #'
 #' @returns A list with the following elements:
 #'  \itemize{
 #'    \item{\code{counts}} a matrix of counts, with rows corresponding to genes and columns corresponding to cells.
 #'    \item{\code{metadata}} a data frame containing cell-level metadata (e.g., cell type, group, sample, covariates).
-#'    \item{\code{gene_info}} a data frame containing, for each gene, its baseline log mean, dispersion, within-sample correlation, and log fold change.
+#'    \item{\code{gene_info}} a data frame containing, for each gene, its baseline log mean, dispersion, random intercept variance, and log fold change.
 #'  }
 #'
 #' @examples
@@ -41,16 +41,15 @@
 #'
 #' @export
 
-
 sim_count <- function(seed = NULL, n_genes = 1000, n_cell_types = 3, cell_type_prob = rep(1, n_cell_types),
                       sample_group = c(4, 4, 4), cells_per_sample = rep(100, sum(sample_group)),
-                      re_prop = 0.8, re_sigma_shape = 3, re_sigma_rate = 2,
+                      re_prop = 0.8, re_var_shape = 5, re_var_rate = 4,
                       grp_specific_prop = 0.2, grp_similarity = 0.5, avg_logfc = rep(1, length(sample_group) - 1), up_grp_prob = rep(0.5, length(sample_group) - 1),
                       ct_specific_prop = 0.05, logfc_ct = rep(1, n_cell_types), up_ct_prob = rep(1, n_cell_types),
                       cell_cont_prop = 0, cell_disc_prop = 0, sample_cont_prop = 0, sample_disc_prop = 0,
                       is_cc_confounder = FALSE, is_cd_confounder = FALSE, is_sc_confounder = FALSE, is_sd_confounder = FALSE,
                       baseline_log_mu_mean = 1, baseline_log_mu_sd = 0.3,
-                      phi_shape = 2, phi_rate = 1,
+                      phi_alpha0 = 0.1, phi_alpha1 = 4, phi_sigma = 0.3,
                       lib_size_factor_shape = 3, lib_size_factor_rate = 3,
                       allow_overlap = TRUE) {
   # -----------------------------
@@ -241,12 +240,10 @@ sim_count <- function(seed = NULL, n_genes = 1000, n_cell_types = 3, cell_type_p
   }
 
   # -----------------------------
-  # Baseline expression and 1/dispersion
+  # Baseline expression
   # -----------------------------
   baseline_log_mu <- rnorm(n_genes, mean = baseline_log_mu_mean, sd = baseline_log_mu_sd)
-  phi <- rgamma(n_genes, shape = phi_shape, rate = phi_rate)
   gene_info[, baseline_log_mu := baseline_log_mu]
-  gene_info[, dispersion := 1 / phi]
 
   # -----------------------------
   # Library size factor
@@ -266,12 +263,12 @@ sim_count <- function(seed = NULL, n_genes = 1000, n_cell_types = 3, cell_type_p
   rownames(random_intercepts) <- all_genes
   colnames(random_intercepts) <- sample_ids
 
-  random_intercepts_sigma <- sqrt(rinvgamma(n = length(sample_effect_genes), shape = re_sigma_shape, rate = re_sigma_rate))
+  random_intercepts_sigma <- sqrt(rinvgamma(n = length(sample_effect_genes), shape = re_var_shape, rate = re_var_rate))
 
   random_intercepts[sample_effect_genes, ] <- matrix(rnorm(n_sample_eff * total_samples), nrow = n_sample_eff, ncol = total_samples) * random_intercepts_sigma
 
-  gene_info[, within_sample_correlation := FALSE] # Initialize to FALSE
-  gene_info[gene_id %in% sample_effect_genes, within_sample_correlation := TRUE]
+  gene_info[, random_intercept_variance := 0] # Initialize to 0
+  gene_info[gene_id %in% sample_effect_genes, random_intercept_variance := (random_intercepts_sigma^2)[match(gene_id, sample_effect_genes)]]
 
   # -----------------------------
   # Cell type effects
@@ -482,6 +479,60 @@ sim_count <- function(seed = NULL, n_genes = 1000, n_cell_types = 3, cell_type_p
   # }
 
   # -----------------------------
+  # Calculate mean-dependent dispersion
+  # -----------------------------
+  # Pre-compute indices for faster lookup
+  sample_indices <- match(metadata$sample, sample_ids)
+  ct_indices <- match(metadata$cell_type, cell_types)
+  group_indices <- match(metadata$group, groups)
+  
+  # Create log_mu matrix (genes x cells) efficiently
+  log_mu_matrix <- matrix(baseline_log_mu, nrow = n_genes, ncol = n_cells)
+  
+  # Add random intercepts
+  log_mu_matrix <- log_mu_matrix + random_intercepts[, sample_indices]
+  
+  # Add cell type effects
+  log_mu_matrix <- log_mu_matrix + cell_type_effects[, ct_indices]
+  
+  # Add group effects (vectorized)
+  non_ref_cells <- metadata$group != reference_group
+  if (any(non_ref_cells)) {
+    group_effect_matrix <- group_effects[, group_indices]
+    group_effect_matrix[, !non_ref_cells] <- 0  # Zero out reference group
+    log_mu_matrix <- log_mu_matrix + group_effect_matrix
+  }
+  
+  # Add covariate effects (vectorized)
+  if (include_cell_cont) {
+    log_mu_matrix <- log_mu_matrix + outer(covariate_effects$cell_cont, metadata$cell_continuous)
+  }
+  if (include_cell_disc) {
+    cell_disc_B <- as.numeric(metadata$cell_discrete == "B")
+    cell_disc_C <- as.numeric(metadata$cell_discrete == "C")
+    log_mu_matrix <- log_mu_matrix + 
+      outer(covariate_effects$cell_disc_B, cell_disc_B) + 
+      outer(covariate_effects$cell_disc_C, cell_disc_C)
+  }
+  if (include_sample_cont) {
+    log_mu_matrix <- log_mu_matrix + outer(covariate_effects$sample_cont, metadata$sample_continuous)
+  }
+  if (include_sample_disc) {
+    sample_disc_Y <- as.numeric(metadata$sample_discrete == "Y")
+    log_mu_matrix <- log_mu_matrix + outer(covariate_effects$sample_disc_Y, sample_disc_Y)
+  }
+  
+  # Calculate average expression per gene (vectorized)
+  avg_mu <- rowMeans(exp(log_mu_matrix))
+  
+  # Calculate mean-dependent dispersion
+  expected_phi <- phi_alpha0 + phi_alpha1 / avg_mu
+  log_phi <- log(expected_phi) + rnorm(n_genes, mean = 0, sd = phi_sigma)
+  phi <- exp(log_phi)
+  
+  gene_info[, dispersion := phi]
+
+  # -----------------------------
   # Simulate expression
   # -----------------------------
   count_mat <- matrix(0, nrow = n_genes, ncol = n_cells)
@@ -503,16 +554,16 @@ sim_count <- function(seed = NULL, n_genes = 1000, n_cell_types = 3, cell_type_p
     }
 
     if (include_cell_cont) {
-      log_mu <- log_mu + covariate_effects$cell_cont * cell$cell_cont
+      log_mu <- log_mu + covariate_effects$cell_cont * cell$cell_continuous
     }
     if (include_cell_disc) {
-      log_mu <- log_mu + covariate_effects$cell_disc_B * as.numeric(cell$cell_disc == "B") + covariate_effects$cell_disc_C * as.numeric(cell$cell_disc == "C")
+      log_mu <- log_mu + covariate_effects$cell_disc_B * as.numeric(cell$cell_discrete == "B") + covariate_effects$cell_disc_C * as.numeric(cell$cell_discrete == "C")
     }
     if (include_sample_cont) {
-      log_mu <- log_mu + covariate_effects$sample_cont * cell$sample_cont
+      log_mu <- log_mu + covariate_effects$sample_cont * cell$sample_continuous
     }
     if (include_sample_disc) {
-      log_mu <- log_mu + covariate_effects$sample_disc * as.numeric(cell$sample_disc == "Y")
+      log_mu <- log_mu + covariate_effects$sample_disc_Y * as.numeric(cell$sample_discrete == "Y")
     }
 
     mu <- exp(log_mu) * lib_size[j]

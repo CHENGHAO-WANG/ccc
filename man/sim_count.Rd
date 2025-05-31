@@ -12,8 +12,8 @@ sim_count(
   sample_group = c(4, 4, 4),
   cells_per_sample = rep(100, sum(sample_group)),
   re_prop = 0.8,
-  re_sigma_shape = 3,
-  re_sigma_rate = 2,
+  re_var_shape = 5,
+  re_var_rate = 4,
   grp_specific_prop = 0.2,
   grp_similarity = 0.5,
   avg_logfc = rep(1, length(sample_group) - 1),
@@ -31,8 +31,9 @@ sim_count(
   is_sd_confounder = FALSE,
   baseline_log_mu_mean = 1,
   baseline_log_mu_sd = 0.3,
-  phi_shape = 2,
-  phi_rate = 1,
+  phi_alpha0 = 0.1,
+  phi_alpha1 = 4,
+  phi_sigma = 0.3,
   lib_size_factor_shape = 3,
   lib_size_factor_rate = 3,
   allow_overlap = TRUE
@@ -53,7 +54,7 @@ sim_count(
 
 \item{re_prop}{numeric specifies the proportion of genes with sample-level random intercepts.}
 
-\item{re_sigma_shape, re_sigma_rate}{Simulate gene-wise standard deviation for sample-level random intercepts from a inverse Gamma distribution with provided shape and rate.}
+\item{re_var_shape, re_var_rate}{Simulate gene-wise variance for sample-level random intercepts from a inverse Gamma distribution with provided shape and rate.}
 
 \item{grp_specific_prop}{numeric specifies the proportions of differentially expressed (DE) genes between each non-reference group and the reference group.}
 
@@ -73,11 +74,11 @@ sim_count(
 
 \item{is_cc_confounder, is_cd_confounder, is_sc_confounder, is_sd_confounder}{logical specifying whether each covariate and group effects are confounded. Default to FALSE.}
 
-\item{baseline_log_mu_mean, baseline_log_mu_sd}{Simulate baseline log mean for each gene from a normal distribution with provided mean and sd.}
+\item{baseline_log_mu_mean, baseline_log_mu_sd}{simulate baseline log mean for each gene from a normal distribution with provided mean and sd.}
 
-\item{phi_shape, phi_rate}{Simulate the reciprocal of gene-wise dispersion parameter from a Gamma distribution with provided shape and rate.}
+\item{phi_alpha0, phi_alpha1, phi_sigma}{parameters for mean-dependent dispersion. For each gene, dispersion is calculated as \eqn{exp(log(phi\_alpha0 + phi\_alpha1/avg\_mu) + N(0, phi\_sigma^2))}, where avg_mu is the gene-wise average expression across all cells.}
 
-\item{lib_size_factor_shape, lib_size_factor_rate}{Simulate library size factors for each cell from a Gamma distribution with provided shape and rate. Recommend these be equal.}
+\item{lib_size_factor_shape, lib_size_factor_rate}{simulate library size factors for each cell from a Gamma distribution with provided shape and rate. Recommend these be equal.}
 
 \item{allow_overlap}{logical specifying whether group-specific genes and cell type-specific genes can overlap. If FALSE, they must be mutually exclusive. Defaults to TRUE.}
 }
@@ -86,7 +87,7 @@ A list with the following elements:
 \itemize{
 \item{\code{counts}} a matrix of counts, with rows corresponding to genes and columns corresponding to cells.
 \item{\code{metadata}} a data frame containing cell-level metadata (e.g., cell type, group, sample, covariates).
-\item{\code{gene_info}} a data frame containing, for each gene, its baseline log mean, dispersion, within-sample correlation, and log fold change.
+\item{\code{gene_info}} a data frame containing, for each gene, its baseline log mean, dispersion, random intercept variance, and log fold change.
 }
 }
 \description{

@@ -13,10 +13,10 @@ A list with the following elements:
 \item{\code{metadata}}{a data frame of cell-level metadata with 1200 rows and 4 columns (\code{cell_id}, \code{sample}, \code{group}, and \code{cell_type})}
 \item{\code{gene_info}}{a data frame with 1000 rows and 9 columns:
 \itemize{
-\item \code{gene_id}: gene symbol
+\item \code{gene_id}: simulated gene symbols, in the form of "G" followed by numbers.
 \item \code{baseline_log_mu}: baseline log mean count
 \item \code{dispersion}: dispersion
-\item \code{within_sample_correlation}: does this gene have a sample-level random intercept?
+\item \code{random_intercept_variance}: variance for sample-level random intercept
 \item \code{CT1_logfc}, \code{CT2_logfc}, \code{CT3_logfc}: log fold change of cell-type-specific genes in "CT1", "CT2", and "CT3" cell types
 \item \code{grp2_logfc}, \code{grp3_logfc}: log fold change comparing "grp2" and "grp3" to "grp1" group
 }
