@@ -18,6 +18,7 @@ sim_count(
   grp_similarity = 0.5,
   avg_logfc = rep(1, length(sample_group) - 1),
   up_grp_prob = rep(0.5, length(sample_group) - 1),
+  logfc_weights = rep(1, n_cell_types),
   ct_specific_prop = 0.05,
   logfc_ct = rep(1, n_cell_types),
   up_ct_prob = rep(1, n_cell_types),
@@ -60,13 +61,15 @@ sim_count(
 
 \item{grp_similarity}{numeric in \eqn{[0, 1]} specifies the overlap across the DE genes in each non-reference group.}
 
-\item{avg_logfc}{a vector of length \code{length(sample_group) - 1}. Specifies the average log fold change for each non-reference group compared to the reference group.}
+\item{avg_logfc}{a vector of length \code{length(sample_group) - 1}. Specifies the average log fold change for each non-reference group compared to the reference group. Simulate gene-wise log fold changes from a Gamma distribution with shape = 4 and rate = 4 / \code{avg_logfc[i]} in the \code{i}th non-reference group.}
 
 \item{up_grp_prob}{a vector of length \code{length(sample_group) - 1}. Specifies the probabilities of up-regulation in each non-reference group.}
 
+\item{logfc_weights}{a vector of length \code{n_cell_types}. Specifies cell-type-specific weights to scale group-specific log fold changes. Group effects are multiplied by these weights for each cell type. Defaults to \code{rep(1, n_cell_types)}.}
+
 \item{ct_specific_prop}{numeric specifies the proportions of cell-type-specific genes in each cell type.}
 
-\item{logfc_ct}{a vector of length \code{n_cell_types}. Specifies the average log fold change for each cell type.}
+\item{logfc_ct}{a vector of length \code{n_cell_types}. Specifies the average log fold change for each cell type. Simulate gene-wise log fold changes from a Gamma distribution with shape = 4 and rate = 4 / \code{logfc_ct[i]} in the \code{i}th cell type.}
 
 \item{up_ct_prob}{a vector of length \code{n_cell_types}. Specifies the probabilities of up-regulation in each cell type.}
 
@@ -76,7 +79,7 @@ sim_count(
 
 \item{baseline_log_mu_mean, baseline_log_mu_sd}{simulate baseline log mean for each gene from a normal distribution with provided mean and sd.}
 
-\item{phi_alpha0, phi_alpha1, phi_sigma}{parameters for mean-dependent dispersion. For each gene, dispersion is calculated as \eqn{exp(log(phi\_alpha0 + phi\_alpha1/avg\_mu) + N(0, phi\_sigma^2))}, where avg_mu is the gene-wise average expression across all cells.}
+\item{phi_alpha0, phi_alpha1, phi_sigma}{parameters for mean-dependent dispersion. For each gene, dispersion is calculated as \eqn{exp(log(phi\_alpha0 + phi\_alpha1/avg\_mu) + N(0, phi\_sigma^2))}, where avg_mu is the gene-wise average mu parameter (not multiplied by the library size factor) across all cells.}
 
 \item{lib_size_factor_shape, lib_size_factor_rate}{simulate library size factors for each cell from a Gamma distribution with provided shape and rate. Recommend these be equal.}
 

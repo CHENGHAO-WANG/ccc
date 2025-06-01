@@ -12,15 +12,16 @@
 #' @param re_var_shape,re_var_rate Simulate gene-wise variance for sample-level random intercepts from a inverse Gamma distribution with provided shape and rate.
 #' @param grp_specific_prop numeric specifies the proportions of differentially expressed (DE) genes between each non-reference group and the reference group.
 #' @param grp_similarity numeric in \eqn{[0, 1]} specifies the overlap across the DE genes in each non-reference group.
-#' @param avg_logfc a vector of length `length(sample_group) - 1`. Specifies the average log fold change for each non-reference group compared to the reference group.
+#' @param avg_logfc a vector of length `length(sample_group) - 1`. Specifies the average log fold change for each non-reference group compared to the reference group. Simulate gene-wise log fold changes from a Gamma distribution with shape = 4 and rate = 4 / `avg_logfc[i]` in the `i`th non-reference group.
 #' @param up_grp_prob a vector of length `length(sample_group) - 1`. Specifies the probabilities of up-regulation in each non-reference group.
+#' @param logfc_weights a vector of length `n_cell_types`. Specifies cell-type-specific weights to scale group-specific log fold changes. Group effects are multiplied by these weights for each cell type. Defaults to `rep(1, n_cell_types)`.
 #' @param ct_specific_prop numeric specifies the proportions of cell-type-specific genes in each cell type.
-#' @param logfc_ct a vector of length `n_cell_types`. Specifies the average log fold change for each cell type.
+#' @param logfc_ct a vector of length `n_cell_types`. Specifies the average log fold change for each cell type. Simulate gene-wise log fold changes from a Gamma distribution with shape = 4 and rate = 4 / `logfc_ct[i]` in the `i`th cell type.
 #' @param up_ct_prob a vector of length `n_cell_types`. Specifies the probabilities of up-regulation in each cell type.
 #' @param cell_cont_prop,cell_disc_prop,sample_cont_prop,sample_disc_prop proportions of genes associated with cell-level continuous covariate, cell-level discrete covariate, sample-level continuous covariate, and sample-level discrete covariate respectively. Default to 0.
 #' @param is_cc_confounder,is_cd_confounder,is_sc_confounder,is_sd_confounder logical specifying whether each covariate and group effects are confounded. Default to FALSE.
 #' @param baseline_log_mu_mean,baseline_log_mu_sd  simulate baseline log mean for each gene from a normal distribution with provided mean and sd.
-#' @param phi_alpha0,phi_alpha1,phi_sigma parameters for mean-dependent dispersion. For each gene, dispersion is calculated as \eqn{exp(log(phi\_alpha0 + phi\_alpha1/avg\_mu) + N(0, phi\_sigma^2))}, where avg_mu is the gene-wise average expression across all cells.
+#' @param phi_alpha0,phi_alpha1,phi_sigma parameters for mean-dependent dispersion. For each gene, dispersion is calculated as \eqn{exp(log(phi\_alpha0 + phi\_alpha1/avg\_mu) + N(0, phi\_sigma^2))}, where avg_mu is the gene-wise average mu parameter (not multiplied by the library size factor) across all cells.
 #' @param lib_size_factor_shape,lib_size_factor_rate simulate library size factors for each cell from a Gamma distribution with provided shape and rate. Recommend these be equal.
 #' @param allow_overlap logical specifying whether group-specific genes and cell type-specific genes can overlap. If FALSE, they must be mutually exclusive. Defaults to TRUE.
 #'
@@ -45,6 +46,7 @@ sim_count <- function(seed = NULL, n_genes = 1000, n_cell_types = 3, cell_type_p
                       sample_group = c(4, 4, 4), cells_per_sample = rep(100, sum(sample_group)),
                       re_prop = 0.8, re_var_shape = 5, re_var_rate = 4,
                       grp_specific_prop = 0.2, grp_similarity = 0.5, avg_logfc = rep(1, length(sample_group) - 1), up_grp_prob = rep(0.5, length(sample_group) - 1),
+                      logfc_weights = rep(1, n_cell_types),
                       ct_specific_prop = 0.05, logfc_ct = rep(1, n_cell_types), up_ct_prob = rep(1, n_cell_types),
                       cell_cont_prop = 0, cell_disc_prop = 0, sample_cont_prop = 0, sample_disc_prop = 0,
                       is_cc_confounder = FALSE, is_cd_confounder = FALSE, is_sc_confounder = FALSE, is_sd_confounder = FALSE,
@@ -67,6 +69,11 @@ sim_count <- function(seed = NULL, n_genes = 1000, n_cell_types = 3, cell_type_p
   if (length(cell_type_prob) != n_cell_types) {
     cell_type_prob <- rep(1, n_cell_types)
     message("'cell_type_prob' of incorrect length. Use the default instead.")
+  }
+
+  if (length(logfc_weights) != n_cell_types) {
+    logfc_weights <- rep(1, n_cell_types)
+    message("'logfc_weights' of incorrect length. Use the default instead.")
   }
 
   n_groups <- length(sample_group)
@@ -495,11 +502,16 @@ sim_count <- function(seed = NULL, n_genes = 1000, n_cell_types = 3, cell_type_p
   # Add cell type effects
   log_mu_matrix <- log_mu_matrix + cell_type_effects[, ct_indices]
   
-  # Add group effects (vectorized)
+  # Add group effects (vectorized with cell-type-specific weights)
   non_ref_cells <- metadata$group != reference_group
   if (any(non_ref_cells)) {
     group_effect_matrix <- group_effects[, group_indices]
     group_effect_matrix[, !non_ref_cells] <- 0  # Zero out reference group
+    
+    # Apply cell-type-specific weights to group effects
+    ct_weight_matrix <- matrix(logfc_weights[ct_indices], nrow = n_genes, ncol = n_cells, byrow = TRUE)
+    group_effect_matrix <- group_effect_matrix * ct_weight_matrix
+    
     log_mu_matrix <- log_mu_matrix + group_effect_matrix
   }
   
@@ -550,7 +562,8 @@ sim_count <- function(seed = NULL, n_genes = 1000, n_cell_types = 3, cell_type_p
 
     if (cell$group != reference_group) {
       grp_idx <- which(colnames(group_effects) == cell$group)
-      log_mu <- log_mu + group_effects[, grp_idx]
+      ct_idx <- which(cell_types == cell$cell_type)
+      log_mu <- log_mu + group_effects[, grp_idx] * logfc_weights[ct_idx]
     }
 
     if (include_cell_cont) {
