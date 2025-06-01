@@ -372,8 +372,8 @@ rtrunc_norm <- function(n, mean = 0, sd = 1, lower = -Inf, upper = Inf) {
 }
 
 ## inverse_gamma
-rinvgamma <- function(n, shape, rate = 1, scale = 1 / rate) {
-  1 / rgamma(n, shape, scale)
+rinvgamma <- function(n, shape, rate, scale = 1 / rate) {
+  1 / rgamma(n, shape = shape, rate = scale)
 }
 
 ## arguments that are different from defaults
