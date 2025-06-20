@@ -4,14 +4,37 @@
 \alias{log_normalize}
 \title{Log Normalize Data}
 \usage{
-log_normalize(count_matrix, scale_factor = 10000, base = exp(1))
+log_normalize(
+  count_matrix,
+  num_scale_factor = NULL,
+  scale_factor = "geometric",
+  base = 2,
+  trim_lower = 0.1,
+  trim_upper = 0.1
+)
 }
 \arguments{
-\item{count_matrix}{a numeric matrix of raw counts, with rows corresponding to genes and columns corresponding to cells.}
+\item{count_matrix}{a numeric matrix of raw counts, with rows corresponding
+to genes and columns corresponding to cells.}
 
-\item{scale_factor}{numeric. The scale factor fro cell-level normalization. Defaults to 10000.}
+\item{num_scale_factor}{numeric. The scale factor for cell-level
+normalization. Defaults to NULL. If this parameter is specified, it
+overrides \code{scale_factor}.}
 
-\item{base}{numeric. The base of the log transformation. Defaults to \code{exp(1)}.}
+\item{scale_factor}{character. The method for cell-level normalization.
+This argument only works when \code{num_scale_factor} is NULL.
+\itemize{
+\item \dQuote{\code{geometric}}: (the default) uses the geometric mean of library sizes.
+\item \dQuote{\code{arithmetic}}: uses the arithmetic mean of library sizes.
+\item \dQuote{\code{median}}: uses the median of library sizes.
+}}
+
+\item{base}{numeric. The base of the log transformation. Defaults to \code{2}.}
+
+\item{trim_lower, trim_upper}{numeric. The fraction of observations to be trimmed
+from the lower and upper ends of the library size distribution before its
+center is computed. These parameters only work when \code{num_scale_factor} is NULL.
+Each value should be in \eqn{[0, 0.45]}. Both default to 0.1.}
 }
 \value{
 A numeric matrix of normalized counts.
