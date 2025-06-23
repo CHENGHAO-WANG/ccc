@@ -135,7 +135,7 @@ ccc_enrich <- function(expression_matrix, metadata,
   if (metadata[, uniqueN(cell_type)] == 1) {
     stop("Only one cell type in `metadata`. Please provide a dataset with multiple cell types.")
   }
-  
+  # Count the number of distinct id's
   num_ids <- metadata[, uniqueN(id)]
 
   if (isTRUE(sep_detection)) {

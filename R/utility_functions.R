@@ -286,8 +286,8 @@ ccc_estimate <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logis
       coef_l_lm <- lme4::fixef(fit.l.linear)
       coef_r_lm <- lme4::fixef(fit.r.linear)
       if (isTRUE(sandwich)) {
-        vcov_l_lm <- clubSandwich::vcovCR(fit.l.linear, type = "CR2")[var_names, var_names]
-        vcov_r_lm <- clubSandwich::vcovCR(fit.r.linear, type = "CR2")[var_names, var_names]
+        vcov_l_lm <- clubSandwich::vcovCR(fit.l.linear, type = "CR1p")[var_names, var_names]
+        vcov_r_lm <- clubSandwich::vcovCR(fit.r.linear, type = "CR1p")[var_names, var_names]
       }
     } else {
       coef_l_lm <- stats::coef(fit.l.linear)
@@ -314,6 +314,11 @@ ccc_estimate <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logis
       coef_r_logm <- m_l$betas
       vcov_l_logm <- m_l$var_betas[var_names, var_names]
       vcov_r_logm <- m_r$var_betas[var_names, var_names]
+      if (isTRUE(sandwich)) {
+        # small cluster number correction
+        vcov_l_logm <- vcov_l_logm * (num_ids / (num_ids - 1))
+        vcov_r_logm <- vcov_r_logm * (num_ids / (num_ids - 1))
+      }
     } else {
       coef_l_logm <- stats::coef(fit.l.logistic)
       coef_r_logm <- stats::coef(fit.r.logistic)

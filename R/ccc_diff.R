@@ -269,7 +269,7 @@ ccc_diff <- function(expression_matrix, metadata,
     cell_id_col = cell_id_col, cell_type_col = cell_type_col,
     id_col = id_col, group_col = group_col
   )
-
+  # Count the number of distinct id's
   num_ids <- metadata[, uniqueN(id)]
 
   if (isTRUE(sep_detection)) {
