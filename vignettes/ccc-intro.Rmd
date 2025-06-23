@@ -45,9 +45,10 @@ library(tidyr)
 ```{r}
 # simulate data
 data.sim1 <- sim_count(seed = 1, n_genes = 1000, sample_group = c(3, 3), 
-                       cells_per_sample = rep(100, 6),
-                       grp_specific_prop = 0.3, ct_specific_prop = 0.1)
+                       cells_per_sample = rep(100, 6), avg_logfc = 1.5,
+                       grp_specific_prop = 0.2, ct_specific_prop = 0.05)
 
+# expression_matrix <- log_normalize(data.sim1$counts)
 expression_matrix <- log_normalize(data.sim1$counts)
 metadata <- data.sim1$metadata
 gene_info <- data.sim1$gene_info
@@ -57,6 +58,24 @@ gene_info <- data.sim1$gene_info
 metadata %>%
   count(sample, cell_type) %>%
   pivot_wider(names_from = cell_type, values_from = n, values_fill = 0)
+```
+
+```{r colors, echo = TRUE}
+cell_type_colors <- c(
+  "CT1" = "#1b9e77",
+  "CT2" = "#d95f02",
+  "CT3" = "#7570b3"
+)
+sample_colors <- c(
+  "S1" = "#a1d99b",  
+  "S2" = "#41ab5d",  
+  "S3" = "#005a32",  
+
+  "S4" = "#dadaeb",  
+  "S5" = "#9e9ac8",  
+  "S6" = "#54278f"  
+)
+group_colors <- c("grp1" = "green3", "grp2" = "purple3")
 ```
 
 
@@ -73,21 +92,23 @@ tsne_df$group <- metadata$group
 tsne_df$sample <- metadata$sample
 ```
 
-```{r}
+```{r tsne_plot}
 p1 <- ggplot(tsne_df, aes(x = TSNE1, y = TSNE2, color = cell_type)) +
   geom_point(alpha = 0.7) +
   theme_minimal() +
-  labs(color = "Cell Type")
+  labs(color = "Cell Type") +
+  scale_color_manual(values = cell_type_colors)
 
 p2 <- ggplot(tsne_df, aes(x = TSNE1, y = TSNE2, color = group)) +
   geom_point(alpha = 0.7) +
   theme_minimal() +
-  labs(color = "Group")
+  labs(color = "Group") +
+  scale_color_manual(values = group_colors)
 
 p3 <- ggplot(tsne_df, aes(x = TSNE1, y = TSNE2, color = sample)) +
   geom_point(alpha = 0.7) +
   theme_minimal() +
-  labs(color = "Sample")
+  labs(color = "Sample") 
 
 # Combine side by side
 p1 + p2 + p3 + plot_layout(ncol = 2)
@@ -106,20 +127,7 @@ expression_matrix_top <- expression_matrix_sorted[var_genes, ]
 
 rownames(metadata_sorted) <- metadata_sorted$cell_id
 annotation_col <- metadata_sorted[, c("sample", "cell_type")]
-cell_type_colors <- c(
-  "CT1" = "#1b9e77",
-  "CT2" = "#d95f02",
-  "CT3" = "#7570b3"
-)
-sample_colors <- c(
-  "S1" = "#a1d99b",  
-  "S2" = "#41ab5d",  
-  "S3" = "#005a32",  
 
-  "S4" = "#dadaeb",  
-  "S5" = "#9e9ac8",  
-  "S6" = "#54278f"  
-)
 annotation_colors <- list(
   cell_type = cell_type_colors,
   sample = sample_colors
@@ -140,6 +148,11 @@ pheatmap(expression_matrix_top,
   # Perform PCA
   pca_result <- prcomp(t(expression_matrix), center = TRUE, scale. = TRUE)
   
+  # Calculate proportion of variance explained
+  var_explained <- pca_result$sdev^2 / sum(pca_result$sdev^2)
+  pc1_var <- round(var_explained[1] * 100, 1)
+  pc2_var <- round(var_explained[2] * 100, 1)
+  
   # Create data frame with PCA results and metadata
   pca_df <- data.frame(
     PC1 = pca_result$x[, 1],
@@ -149,32 +162,40 @@ pheatmap(expression_matrix_top,
     group = metadata$group,
     sample = metadata$sample
   )
-  group_colors <- c("grp1" = "green3", "grp2" = "purple3")
+  
   # Create plots with different colorings
   # PC1 vs CDR
   p1 <- ggplot(pca_df, aes(x = PC1, y = CDR, color = cell_type)) +
     geom_point(alpha = 0.7) +
     theme_minimal() +
-    labs(title = "PC1 vs CDR", color = "Cell Type") +
+    labs(title = "PC1 vs CDR", 
+         x = paste0("PC1 (", pc1_var, "%)"),
+         color = "Cell Type") +
     scale_color_manual(values = cell_type_colors)
   
   p2 <- ggplot(pca_df, aes(x = PC1, y = CDR, color = group)) +
     geom_point(alpha = 0.7) +
     theme_minimal() +
-    labs(title = "PC1 vs CDR", color = "Group") +
+    labs(title = "PC1 vs CDR", 
+         x = paste0("PC1 (", pc1_var, "%)"),
+         color = "Group") +
     scale_color_manual(values = group_colors)
   
   # PC2 vs CDR
   p3 <- ggplot(pca_df, aes(x = PC2, y = CDR, color = cell_type)) +
     geom_point(alpha = 0.7) +
     theme_minimal() +
-    labs(title = "PC2 vs CDR", color = "Cell Type") +
+    labs(title = "PC2 vs CDR", 
+         x = paste0("PC2 (", pc2_var, "%)"),
+         color = "Cell Type") +
     scale_color_manual(values = cell_type_colors)
   
   p4 <- ggplot(pca_df, aes(x = PC2, y = CDR, color = group)) +
     geom_point(alpha = 0.7) +
     theme_minimal() +
-    labs(title = "PC2 vs CDR", color = "Group") +
+    labs(title = "PC2 vs CDR", 
+         x = paste0("PC2 (", pc2_var, "%)"),
+         color = "Group") +
     scale_color_manual(values = group_colors)
   
   # Combine all plots
@@ -195,9 +216,10 @@ ggplot(pca_df, aes(x = CDR, fill = group, color = group)) +
 
 ```{r}
 # Randomly sample 20 genes
-set.seed(42)
+set.seed(77)
 sampled_genes <- sample(rownames(expression_matrix), 20)
-
+```
+```{r}
 # Create a data frame for all genes
 plot_df <- data.frame(
   expression = numeric(),
@@ -294,6 +316,121 @@ ggplot(plot_df_celltypes, aes(x = expression, fill = cell_type, color = cell_typ
         axis.text = element_text(size = 6))
 ```
 
+```{r}
+# Create a data frame for all genes with cell type-group combination
+plot_df_ct_grp <- data.frame(
+  expression = numeric(),
+  cell_type = character(),
+  group = character(),
+  gene = character()
+)
+
+# Combine data for all genes
+for(gene in sampled_genes) {
+  gene_expr <- expression_matrix[gene, ]
+  gene_df <- data.frame(
+    expression = gene_expr,
+    cell_type = metadata$cell_type,
+    group = metadata$group,
+    gene = gene
+  )
+  plot_df_ct_grp <- rbind(plot_df_ct_grp, gene_df)
+}
+
+# Create cell type-group combination variable and colors
+plot_df_ct_grp$ct_grp <- paste(plot_df_ct_grp$cell_type, plot_df_ct_grp$group, sep = "_")
+
+# Define colors: distinct for cell types, similar within each cell type for groups
+ct_grp_colors <- c(
+  # CT1 - green shades
+  "CT1_grp1" = "#1b9e77",  # darker green
+  "CT1_grp2" = "#7fcdcd",  # lighter green
+  # CT2 - orange shades  
+  "CT2_grp1" = "#d95f02",  # darker orange
+  "CT2_grp2" = "#ff9f59",  # lighter orange
+  # CT3 - purple shades
+  "CT3_grp1" = "#7570b3",  # darker purple
+  "CT3_grp2" = "#c2a5f5"   # lighter purple
+)
+
+# Create faceted density plot for cell type-group combinations
+ggplot(plot_df_ct_grp, aes(x = expression, color = ct_grp)) +
+  geom_density(alpha = 0.8) +
+  facet_wrap(~gene, ncol = 4, scales = "free_y") +
+  theme_minimal() +
+  labs(x = "Expression",
+       y = "Density",
+       title = "Gene Expression Density by Cell Type-Group Combinations") +
+  scale_color_manual(values = ct_grp_colors,
+                     name = "Cell Type - Group",
+                     labels = c("CT1_grp1" = "CT1 - Group 1",
+                               "CT1_grp2" = "CT1 - Group 2", 
+                               "CT2_grp1" = "CT2 - Group 1",
+                               "CT2_grp2" = "CT2 - Group 2",
+                               "CT3_grp1" = "CT3 - Group 1", 
+                               "CT3_grp2" = "CT3 - Group 2")) +
+  theme(strip.text = element_text(size = 8),
+        axis.text = element_text(size = 6),
+        legend.position = "bottom") +
+  guides(color = guide_legend(nrow = 2))
+```
+
+## Single Gene Expression Distribution Visualization
+
+```{r single_gene_visualization}
+# Function to visualize gene expression distribution across two groups
+# Specify the gene of interest here
+gene_of_interest <- "G434"  # Change this to any gene you want to visualize
+
+# Check if gene exists in the data
+if (!gene_of_interest %in% rownames(expression_matrix)) {
+  stop(paste("Gene", gene_of_interest, "not found in expression matrix"))
+}
+if (!gene_of_interest %in% rownames(data.sim1$counts)) {
+  stop(paste("Gene", gene_of_interest, "not found in count matrix"))
+}
+
+# Plot 1: Using log-normalized expression_matrix
+expr_data <- data.frame(
+  expression = expression_matrix[gene_of_interest, ],
+  group = metadata$group,
+  cell_id = colnames(expression_matrix)
+)
+
+p_expr <- ggplot(expr_data, aes(x = expression, fill = group, color = group)) +
+  geom_histogram(aes(y = after_stat(density)), alpha = 0.5, position = "identity", bins = 30) +
+  geom_density(alpha = 0.7, fill = NA, linewidth = 1) +
+  theme_minimal() +
+  labs(title = paste("Log-normalized Expression Distribution:", gene_of_interest),
+       x = "Log-normalized Expression",
+       y = "Density") +
+  scale_fill_manual(values = group_colors) +
+  scale_color_manual(values = group_colors) +
+  theme(legend.position = "bottom")
+
+# Plot 2: Using raw counts from data.sim1$counts
+count_data <- data.frame(
+  counts = data.sim1$counts[gene_of_interest, ],
+  group = metadata$group,
+  cell_id = colnames(data.sim1$counts)
+)
+
+p_counts <- ggplot(count_data, aes(x = counts, fill = group, color = group)) +
+  geom_histogram(aes(y = after_stat(density)), alpha = 0.5, position = "identity", bins = 30) +
+  geom_density(alpha = 0.7, fill = NA, linewidth = 1) +
+  theme_minimal() +
+  labs(title = paste("Raw Count Distribution:", gene_of_interest),
+       x = "Raw Counts",
+       y = "Density") +
+  scale_fill_manual(values = group_colors) +
+  scale_color_manual(values = group_colors) +
+  theme(legend.position = "bottom")
+
+# Combine the plots and explicitly print
+combined_plot <- p_expr | p_counts
+print(combined_plot)
+```
+
 ## Differential Cell-Cell Communication Analysis with `ccc` Package
 
 ```{r}
@@ -316,7 +453,168 @@ a <- readRDS("./diff_a.rds")
 a.res <- ccc_test(ccc_obj = a, contrast = c(grp1 = -1, grp2 = 1))
 ```
 
-```{r, fig.height = 8}
+```{r, fig.heght = 12}
+# Now create the plot with the correct structure
+# Reshape the summary data for plotting
+summary_long <- a$summary %>%
+  # Create ligand-receptor pair labels
+  mutate(pair = paste(ligand, receptor, sep = "-")) %>%
+  # Select and rename columns for plotting
+  select(pair, group,
+         ligand.mean, ligand.mean_se,
+         ligand.positive_mean, ligand.positive_mean_se,
+         ligand.expression_rate, ligand.expression_rate_se,
+         receptor.mean, receptor.mean_se,
+         receptor.positive_mean, receptor.positive_mean_se,
+         receptor.expression_rate, receptor.expression_rate_se) %>%
+  # Reshape to long format for means and SEs
+  pivot_longer(
+    cols = c(ligand.positive_mean, ligand.expression_rate, ligand.mean,
+             receptor.positive_mean, receptor.expression_rate, receptor.mean),
+    names_to = "metric",
+    values_to = "mean"
+  ) %>%
+  # Add corresponding SEs
+  mutate(se = case_when(
+    metric == "ligand.positive_mean" ~ ligand.positive_mean_se,
+    metric == "ligand.expression_rate" ~ ligand.expression_rate_se,
+    metric == "ligand.mean" ~ ligand.mean_se,
+    metric == "receptor.positive_mean" ~ receptor.positive_mean_se,
+    metric == "receptor.expression_rate" ~ receptor.expression_rate_se,
+    metric == "receptor.mean" ~ receptor.mean_se
+  )) %>%
+  # Clean up metric names and convert to factor with specific order
+  mutate(metric = case_when(
+    metric == "ligand.positive_mean" ~ "ligand.positive",
+    metric == "ligand.expression_rate" ~ "ligand.expression_rate",
+    metric == "ligand.mean" ~ "ligand",
+    metric == "receptor.positive_mean" ~ "receptor.positive",
+    metric == "receptor.expression_rate" ~ "receptor.expression_rate",
+    metric == "receptor.mean" ~ "receptor"
+  )) %>%
+  # Convert metric to factor with specific levels
+  mutate(metric = factor(metric, 
+    levels = c(
+      "ligand.positive", "ligand.expression_rate", "ligand",
+      "receptor.positive", "receptor.expression_rate", "receptor"
+    )
+  ))
+
+# Create the plot
+ggplot(summary_long, aes(x = group, y = mean, color = metric, group = metric)) +
+  geom_pointrange(
+    aes(ymin = mean - 1.96 * se, ymax = mean + 1.96 * se),
+    position = position_dodge(width = 0.5),
+    size = 0.1, shape = 1
+  ) +
+  facet_wrap(~pair, ncol = 4) +
+  theme_minimal() +
+  theme(
+    strip.text = element_text(size = 8),
+    legend.position = "bottom",
+    legend.title = element_blank(),
+    panel.grid.minor = element_blank()
+  ) +
+  labs(
+    x = "Group",
+    y = "Value",
+    title = "Summary Statistics for Each Ligand-Receptor Pair"
+  ) +
+  scale_color_manual(
+    values = c(
+      # Ligand metrics in shades of blue
+      "ligand.positive" = "#1f77b4",
+      "ligand.expression_rate" = "#4c9ed9",
+      "ligand" = "#7cb5e8",
+      # Receptor metrics in shades of red
+      "receptor.positive" = "#d62728",
+      "receptor.expression_rate" = "#e57373",
+      "receptor" = "#ffb6c1"
+    ),
+    labels = c(
+      "ligand.positive" = "Ligand Positive Mean",
+      "ligand.expression_rate" = "Ligand Expression Rate",
+      "ligand" = "Ligand Mean",
+      "receptor.positive" = "Receptor Positive Mean",
+      "receptor.expression_rate" = "Receptor Expression Rate",
+      "receptor" = "Receptor Mean"
+    )
+  ) +
+  guides(color = guide_legend(nrow = 2, byrow = TRUE))
+```
+
+```{r}
+# Create effect size plot using a.res
+effect_size_data <- a.res %>%
+  # Create ligand-receptor pair labels
+  mutate(lr_pair = paste(ligand, receptor, sep = "-")) %>%
+  # Select effect size and standard error columns
+  select(lr_pair, 
+         starts_with("effect_size_"), 
+         starts_with("std_err_")) %>%
+  # Reshape to long format for effect sizes
+  pivot_longer(
+    cols = starts_with("effect_size_"),
+    names_to = "effect_type",
+    values_to = "effect_size"
+  ) %>%
+  # Extract the model type (linear, logistic, hurdle) and contrast number
+  mutate(
+    model_type = case_when(
+      grepl("linear", effect_type) ~ "linear",
+      grepl("logistic", effect_type) ~ "logistic", 
+      grepl("hurdle", effect_type) ~ "hurdle"
+    ),
+    contrast_num = gsub(".*_([0-9]+)$", "\\1", effect_type)
+  ) %>%
+  # Add corresponding standard errors
+  mutate(
+    std_err_col = paste0("std_err_", model_type, "_", contrast_num),
+    std_err = case_when(
+      model_type == "linear" ~ std_err_linear_1,
+      model_type == "logistic" ~ std_err_logistic_1,
+      model_type == "hurdle" ~ std_err_hurdle_1
+    )
+  ) %>%
+  # Remove rows with missing values
+  filter(!is.na(effect_size) & !is.na(std_err)) %>%
+  # Calculate confidence intervals
+  mutate(
+    ci_lower = effect_size - 1.96 * std_err,
+    ci_upper = effect_size + 1.96 * std_err,
+    # Set factor levels to control facet order
+    model_type = factor(model_type, levels = c("linear", "logistic", "hurdle"))
+  )
+
+# Create the plot
+ggplot(effect_size_data, aes(x = lr_pair, y = effect_size, color = model_type)) +
+  geom_pointrange(
+    aes(ymin = ci_lower, ymax = ci_upper),
+    position = position_dodge(width = 0.6),
+    size = 0.5
+  ) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50", alpha = 0.7) +
+  facet_wrap(~model_type, ncol = 1, scales = "free_y") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+    strip.text = element_text(size = 10),
+    legend.position = "none",  # Remove legend since we're faceting by model type
+    panel.grid.minor = element_blank()
+  ) +
+  labs(
+    x = "Ligand-Receptor Pair",
+    y = "Effect Size ± 1.96*SE", 
+    title = "Effect Sizes with 95% Confidence Intervals"
+  ) +
+  scale_color_manual(values = c(
+    "linear" = "#1f77b4",
+    "logistic" = "#ff7f0e", 
+    "hurdle" = "#2ca02c"
+  ))
+```
+
+```{r, warning = FALSE, fig.height = 8}
 # Create a data frame for plotting
 plot_data <- a.res %>%
   # Create ligand-receptor labels
@@ -335,11 +633,10 @@ plot_data <- a.res %>%
 ggplot(plot_data, aes(x = lr_pair, y = neg_log10_p)) +
   geom_bar(stat = "identity") +
   facet_wrap(~p_type, ncol = 1, scales = "fixed") +
-  scale_x_discrete(position = "top") +
   theme_minimal() +
   theme(
-    plot.margin = margin(r = 60),
-    axis.text.x = element_text(angle = 45, hjust = 0, size = 8),
+    #plot.margin = margin(b = 10, r = 60),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
     strip.text = element_text(size = 10),
     panel.grid.major.x = element_line(color = "gray90"),  # Add vertical grid lines
     panel.grid.minor.x = element_blank(),
@@ -359,28 +656,9 @@ a_noRE <- ccc_diff(expression_matrix = expression_matrix, metadata = metadata,
               id_col = NULL, lr = lrdb, sender = "CT1", receiver = "CT2",
               lmm_re = FALSE, logmm_re = FALSE, marginal_cores = 2L
               )
-a_lmRE <- ccc_diff(expression_matrix = expression_matrix, metadata = metadata,
-              id_col = "sample", lr = lrdb, sender = "CT1", receiver = "CT2",
-              lmm_re = TRUE, logmm_re = FALSE, marginal_cores = 2L
-              )
-
-```
-```{r, eval = FALSE}
-a_logmRE <- ccc_diff(expression_matrix = expression_matrix, metadata = metadata,
-              id_col = "sample", lr = lrdb, sender = "CT1", receiver = "CT2",
-              lmm_re = FALSE, logmm_re = TRUE, marginal_cores = 2L
-              )
-```
-```{r save results, eval = FALSE, echo = FALSE}
-saveRDS(a_logmRE, file = "./diff_a_logmRE.rds")
-```
-```{r load results, echo = FALSE}
-a_logmRE <- readRDS("./diff_a_logmRE.rds")
 ```
 ```{r}
 a_noRE.res <- ccc_test(ccc_obj = a_noRE, contrast = c(grp1 = -1, grp2 = 1))
-a_lmRE.res <- ccc_test(ccc_obj = a_lmRE, contrast = c(grp1 = -1, grp2 = 1))
-a_logmRE.res <- ccc_test(ccc_obj = a_logmRE, contrast = c(grp1 = -1, grp2 = 1))
 ```
 
 ```{r}
@@ -399,19 +677,7 @@ pvalue_df <- data.frame(
   noRE_hurdle = a_noRE.res$pvalue_hurdle,
   noRE_2part = a_noRE.res$pvalue_2part,
   noRE_stouffer = a_noRE.res$pvalue_stouffer,
-  noRE_fisher = a_noRE.res$pvalue_fisher,
-  lmRE_linear = a_lmRE.res$pvalue_linear,
-  lmRE_logistic = a_lmRE.res$pvalue_logistic,
-  lmRE_hurdle = a_lmRE.res$pvalue_hurdle,
-  lmRE_2part = a_lmRE.res$pvalue_2part,
-  lmRE_stouffer = a_lmRE.res$pvalue_stouffer,
-  lmRE_fisher = a_lmRE.res$pvalue_fisher,
-  logmRE_linear = a_logmRE.res$pvalue_linear,
-  logmRE_logistic = a_logmRE.res$pvalue_logistic,
-  logmRE_hurdle = a_logmRE.res$pvalue_hurdle,
-  logmRE_2part = a_logmRE.res$pvalue_2part,
-  logmRE_stouffer = a_logmRE.res$pvalue_stouffer,
-  logmRE_fisher = a_logmRE.res$pvalue_fisher
+  noRE_fisher = a_noRE.res$pvalue_fisher
 ) %>%
   # Create ligand-receptor pair labels
   mutate(pair = paste(ligand, receptor, sep = "-"))
@@ -424,68 +690,10 @@ pvalue_long <- pvalue_df %>%
     names_sep = "_",
     values_to = "pvalue"
   )
-
-# Check the unique values in model and test columns
-cat("Unique models:\n")
-print(unique(pvalue_long$model))
-cat("\nUnique tests:\n")
-print(unique(pvalue_long$test))
-
-# Check a sample of the data
-cat("\nSample of the data:\n")
-print(head(pvalue_long))
 ```
 
-### Both ligand and receptor are non-DE genes
-
-```{r}
-# simulate binary ligand-receptor pairs using non-DE genes
-nonDEG <- gene_info %>% 
-  filter(CT1_logfc == 0 & CT2_logfc == 0 & CT3_logfc == 0 & grp2_logfc == 0) %>%
-  pull(gene_id)
-set.seed(77)
-ligands <- sample(nonDEG, 100)
-receptors <- sample(setdiff(nonDEG, ligands), 100)
-lrdb.nonDEG <- sim_lr(seed = 1, genes.l = ligands, genes.r = receptors, dimer = 0, trimer = 0, n_lr = 50)
-```
-```{r, eval = FALSE}
-a <- ccc_diff(expression_matrix = expression_matrix, metadata = metadata,
-              id_col = "sample", lr = lrdb.nonDEG, 
-              sender = "CT1", receiver = "CT2",
-              verbose = FALSE, marginal_cores = 2L
-              )
-
-```
-
-```{r}
-
-```
-
-
-
-# Enrichment Analysis
-
-```{r}
-# Check structure of the data frames
-str(a.res)
-str(a_noRE.res)
-str(a_lmRE.res)
-str(a_logmRE.res)
-
-# Print column names
-cat("\nColumn names in a.res:\n")
-names(a.res)
-cat("\nColumn names in a_noRE.res:\n")
-names(a_noRE.res)
-cat("\nColumn names in a_lmRE.res:\n")
-names(a_lmRE.res)
-cat("\nColumn names in a_logmRE.res:\n")
-names(a_logmRE.res)
-```
-
-```{r}
+```{r, warning = FALSE, fig.height = 8}
 # Create faceted line plot
-# First, create a factor with the desired order of test types
 pvalue_long$test <- factor(pvalue_long$test, 
                           levels = c("linear", "logistic", "hurdle", "2part", "stouffer", "fisher"))
 
@@ -494,11 +702,15 @@ ggplot(pvalue_long, aes(x = pair, y = -log10(pvalue), color = model, group = mod
   geom_point(size = 2) +
   facet_wrap(~test, ncol = 1) +
   theme_minimal() +
+  guides(color = guide_legend(nrow = 1)) +
   theme(
-    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+    #plot.margin = margin(b = 10, r = 60),
     strip.text = element_text(size = 10),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
     legend.position = "bottom",
-    panel.grid.minor = element_blank()
+    legend.box = "horizontal",
+    legend.key.spacing.x = unit(1, "cm")
   ) +
   labs(
     x = "Ligand-Receptor Pair",
@@ -506,92 +718,137 @@ ggplot(pvalue_long, aes(x = pair, y = -log10(pvalue), color = model, group = mod
     title = "Comparison of P-values Across Different Models and Tests",
     color = "Model"
   ) +
-  scale_color_manual(values = c("base" = "#E41A1C", 
-                               "noRE" = "#377EB8", 
-                               "lmRE" = "#4DAF4A", 
-                               "logmRE" = "#984EA3")) +
+  scale_color_manual(values = c("base" = "#E41A1C", "noRE" = "#377EB8"),
+                     labels = c("base" = "mixed effects models", "noRE" = "fixed effects models")) +
   # Add a horizontal line at p=0.05 (-log10(0.05) ≈ 1.3)
   geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "gray50")
+```
 
-# Print summary statistics for each model and test
-pvalue_long %>%
-  group_by(model, test) %>%
-  summarise(
-    mean_neglog10p = mean(-log10(pvalue)),
-    min_neglog10p = min(-log10(pvalue)),
-    max_neglog10p = max(-log10(pvalue)),
-    .groups = "drop"
+### Impact of cellular detection rate (CDR) adjustment
+
+```{r}
+a_nocdr <- ccc_diff(expression_matrix = expression_matrix, metadata = metadata,
+              id_col = "sample", lr = lrdb, sender = "CT1", receiver = "CT2",
+              lmm_re = TRUE, logmm_re = TRUE, marginal_cores = 2L, cdr = FALSE
+              )
+```
+```{r save results, eval = FALSE, echo = FALSE}
+saveRDS(a_nocdr, file = "./diff_a_nocdr.rds")
+```
+```{r load results, echo = FALSE}
+a_nocdr <- readRDS("./diff_a_nocdr.rds")
+```
+```{r}
+a_nocdr.res <- ccc_test(ccc_obj = a_nocdr, contrast = c(grp1 = -1, grp2 = 1))
+```
+
+```{r, warning = FALSE}
+# Combine p-values from different models
+pvalue_df <- data.frame(
+  ligand = a.res$ligand,
+  receptor = a.res$receptor,
+  with_linear = a.res$pvalue_linear,
+  with_logistic = a.res$pvalue_logistic,
+  with_hurdle = a.res$pvalue_hurdle,
+  with_2part = a.res$pvalue_2part,
+  with_stouffer = a.res$pvalue_stouffer,
+  with_fisher = a.res$pvalue_fisher,
+  no_linear = a_nocdr.res$pvalue_linear,
+  no_logistic = a_nocdr.res$pvalue_logistic,
+  no_hurdle = a_nocdr.res$pvalue_hurdle,
+  no_2part = a_nocdr.res$pvalue_2part,
+  no_stouffer = a_nocdr.res$pvalue_stouffer,
+  no_fisher = a_nocdr.res$pvalue_fisher
+) %>%
+  # Create ligand-receptor pair labels
+  mutate(pair = paste(ligand, receptor, sep = "-"))
+
+# Reshape data for plotting
+pvalue_long <- pvalue_df %>%
+  pivot_longer(
+    cols = -c(ligand, receptor, pair),
+    names_to = c("model", "test"),
+    names_sep = "_",
+    values_to = "pvalue"
   ) %>%
-  print(n = Inf)
+  pivot_wider(
+    names_from = model,
+    values_from = pvalue
+  )
+
+# Set the order of test types
+pvalue_long$test <- factor(pvalue_long$test, 
+                          levels = c("linear", "logistic", "hurdle", "2part", "stouffer", "fisher"))
+
+# Calculate correlation for each test type
+cor_data <- pvalue_long %>%
+  group_by(test) %>%
+  summarise(
+    cor = cor(-log10(with), -log10(no), method = "pearson", use = "na.or.complete")
+  )
+
+# Create faceted scatter plots with correlation
+ggplot(pvalue_long, aes(x = -log10(with), y = -log10(no))) +
+  geom_point(alpha = 0.6) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray50") +
+  facet_wrap(~test, ncol = 2) +
+  theme_minimal() +
+  theme(
+    strip.text = element_text(size = 10),
+    panel.grid.minor = element_blank()
+  ) +
+  labs(
+    x = "With CDR (-log10 p-value)",
+    y = "Without CDR (-log10 p-value)",
+    title = "Comparison of P-values With and Without CDR Adjustment"
+  ) +
+  # Add correlation coefficient to each facet
+  geom_text(
+    data = cor_data,
+    aes(x = 0, y = Inf, label = sprintf("r = %.3f", cor)),
+    hjust = 0,
+    vjust = 1.5,
+    size = 3
+  )
+```
+
+### Both ligand and receptor are non-DE genes
+
+```{r}
+# simulate binary ligand-receptor pairs using non-DE genes
+nonDEG <- gene_info %>% 
+  filter(grp2_logfc == 0) %>%
+  pull(gene_id)
+set.seed(77)
+ligands <- sample(nonDEG, 100)
+receptors <- sample(setdiff(nonDEG, ligands), 100)
+lrdb.nonDEG <- sim_lr(seed = 200, genes.l = ligands, genes.r = receptors, dimer = 0, trimer = 0, n_lr = 20)
+```
+```{r, eval = FALSE}
+a_nonDEG_s <- ccc_diff(expression_matrix = expression_matrix, metadata = metadata,
+              id_col = "sample", lr = lrdb.nonDEG, 
+              sender = "CT1", receiver = "CT2", marginal_cores = 2L, sandwich = TRUE)
+```
+```{r save results, eval = FALSE, echo = FALSE}
+saveRDS(a_nonDEG, file = "./diff_a_noneDEG.rds")
+```
+```{r load results, echo = FALSE}
+a_nonDEG <- readRDS("./diff_a_noneDEG.rds")
+```
+```{r}
+a_nonDEG_s.res <- ccc_test(ccc_obj = a_nonDEG_s, contrast = c(grp1 = -1, grp2 = 1))
+a_nonDEG.res <- ccc_test(ccc_obj = a_nonDEG, contrast = c(grp1 = -1, grp2 = 1))
 ```
 
 ```{r}
-# Function to create faceted scatter plots for each test type
-create_test_plots <- function(data, test_type) {
-  # Filter data for the specific test
-  plot_data <- data %>%
-    filter(test == test_type) %>%
-    select(pair, model, pvalue) %>%
-    pivot_wider(names_from = model, values_from = pvalue)
-  
-  # Create plots for each model comparison
-  plots <- list()
-  for(model in c("noRE", "lmRE", "logmRE")) {
-    # Calculate correlation
-    cor_val <- cor(-log10(plot_data$base), -log10(plot_data[[model]]), method = "pearson")
-    
-    # Create plot
-    plots[[model]] <- ggplot(plot_data, aes(x = -log10(base), y = -log10(.data[[model]]))) +
-      geom_point(alpha = 0.6) +
-      geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray50") +
-      geom_smooth(method = "lm", se = FALSE, color = "red") +
-      theme_minimal() +
-      labs(
-        x = "base (-log10 p-value)",
-        y = paste0(model, " (-log10 p-value)"),
-        title = paste0("r = ", round(cor_val, 3))
-      ) +
-      theme(
-        plot.title = element_text(hjust = 0.5, size = 10),
-        axis.title = element_text(size = 8)
-      )
-  }
-  
-  # Combine the three plots for this test type
-  wrap_elements(wrap_plots(plots, ncol = 3) +
-    plot_annotation(
-      title = paste("Test Type:", test_type),
-      theme = theme(plot.title = element_text(hjust = 0.5, size = 12))
-    ))
-}
 
-# Create plots for each test type
-test_types <- unique(pvalue_long$test)
-test_plots <- lapply(test_types, function(test_type) {
-  create_test_plots(pvalue_long, test_type)
-})
-
-# Combine all test plots vertically
-combined_plot <- wrap_plots(test_plots, ncol = 1) +
-  plot_annotation(
-    title = "Comparison of P-values Across Different Models and Tests",
-    theme = theme(plot.title = element_text(hjust = 0.5, size = 14))
-  )
-
-# Display the combined plot
-print(combined_plot)
-
-# Print summary statistics for each model and test
-pvalue_long %>%
-  group_by(model, test) %>%
-  summarise(
-    mean_neglog10p = mean(-log10(pvalue)),
-    min_neglog10p = min(-log10(pvalue)),
-    max_neglog10p = max(-log10(pvalue)),
-    .groups = "drop"
-  ) %>%
-  print(n = Inf)
 ```
+# Enrichment Analysis
+
+
+
+
+
 
 
 
