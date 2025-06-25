@@ -17,7 +17,7 @@ ccc_enrich <- function(expression_matrix, metadata,
                       threshold = 0, sep_detection = TRUE, sep_sample_prop = 0, sep_sample_n = 0,
                       sandwich = FALSE, control_logm = list(),
                       control_lmm = lme4::lmerControl(), control_logmm = list(),
-                      chunk_size = 10, marginal_cores = 1) {
+                      chunk_size = 10, marginal_cores = 1, marginal = FALSE, approx = TRUE) {
   old_nthreads <- getDTthreads()
   on.exit(setDTthreads(old_nthreads), add = TRUE)
 
@@ -49,6 +49,8 @@ ccc_enrich <- function(expression_matrix, metadata,
   assertthat::assert_that(assertthat::is.flag(logmm_re))
   assertthat::assert_that(assertthat::is.flag(sandwich))
   assertthat::assert_that(assertthat::is.flag(sep_detection))
+  assertthat::assert_that(assertthat::is.flag(marginal))
+  assertthat::assert_that(assertthat::is.flag(approx))
 
   required_args <- c("expression_matrix", "metadata")
   passed_args <- names(match.call())[-1]
@@ -408,7 +410,8 @@ ccc_enrich <- function(expression_matrix, metadata,
       fit.r.linear = fit.r.linear, fit.r.logistic = fit.r.logistic,
       unique_levels = unique_levels, lmm_re = lmm_re, logmm_re = logmm_re,
       sandwich = sandwich, sender = sender, receiver = receiver,
-      ligand = ligand, receptor = receptor, var_to_test = "class", marginal_cores = marginal_cores
+      ligand = ligand, receptor = receptor, var_to_test = "class", marginal_cores = marginal_cores,
+      marginal = marginal, approx = approx, num_ids = num_ids
     )
     ###
     if (verbose) {

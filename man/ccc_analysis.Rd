@@ -35,7 +35,9 @@ ccc_diff(
   control_lmm = lme4::lmerControl(),
   control_logmm = list(),
   chunk_size = 10,
-  marginal_cores = 1
+  marginal_cores = 1,
+  marginal = FALSE,
+  approx = TRUE
 )
 
 ccc_enrich(
@@ -66,7 +68,9 @@ ccc_enrich(
   control_lmm = lme4::lmerControl(),
   control_logmm = list(),
   chunk_size = 10,
-  marginal_cores = 1
+  marginal_cores = 1,
+  marginal = FALSE,
+  approx = TRUE
 )
 }
 \arguments{
@@ -84,7 +88,7 @@ ccc_enrich(
 
 \item{cdr}{logical scalar. If \code{TRUE} (the default), calculate and adjust for cellular detection rates (CDR). The CDR of a cell is defined as the number of genes with expression level above \code{threshold} divided by the total number of genes.}
 
-\item{id_col}{a character string specifying the name of the column in \code{metadata} that contains individual-level (sample-level) ID's. Used for random effect modeling. Must be provided if \code{lmm_re == TRUE} or \code{logmm_re == TRUE}; otherwise, this can be omitted. Defaults to \code{"id"}.}
+\item{id_col}{a character string specifying the name of the column in \code{metadata} that contains individual-level (sample-level) ID's. Used for random effect modeling. Must be provided if \code{lmm_re} is \code{TRUE} or \code{logmm_re} is \code{TRUE}; otherwise, this can be omitted. Defaults to \code{"id"}.}
 
 \item{lmm_re}{logical scalar. Should a random effect be included in the linear component of the hurdle model? If \code{TRUE} (the default), fit a linear mixed-effects model with a random intercept based on \code{id_col} for each ligand/receptor gene; if \code{FALSE}, fit a linear model without random effects.}
 
@@ -133,7 +137,11 @@ ccc_enrich(
 
 \item{chunk_size}{integer scalar. The number of communication events (each defined by a distinct combination of sender, receiver, ligand, and receptor) per chunk. Passed to the \code{future.chunk.size} argument of \code{\link[future.apply:future_lapply]{future.apply::future_lapply()}}. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.}
 
-\item{marginal_cores}{integer scalar. Number of cores to use for parallel computation in \code{\link[GLMMadaptive:marginal_coefs]{GLMMadaptive::marginal_coefs()}}. Only used if \code{logmm_re == TRUE}. Defaults to 1. If the code is running in parallel using the \pkg{future} package (i.e., \code{nbrOfWorkers() > 1}), this argument will be forced to 1 to avoid nested parallelism.}
+\item{marginal_cores}{integer scalar. Number of cores to use for parallel computation in \code{\link[GLMMadaptive:marginal_coefs]{GLMMadaptive::marginal_coefs()}}. Only used if \code{logmm_re} is \code{TRUE}. Defaults to 1. If the code is running in parallel using the \pkg{future} package (i.e., \code{nbrOfWorkers() > 1}), this argument will be forced to 1 to avoid nested parallelism.}
+
+\item{marginal}{logical scalar. If \code{TRUE}, use marginal coefficients for logistic mixed models instead of conditional coefficients. Only used when \code{logmm_re} is \code{TRUE}. Defaults to \code{FALSE}.}
+
+\item{approx}{logical scalar. If \code{TRUE}, use attenuation approximation for estimating marginal coefficients and corresponding covariance in logistic mixed models. Only used when both \code{marginal} and \code{logmm_re} are \code{TRUE}. The approximation divides conditional coefficients by \eqn{\sqrt{1 + \frac{16}{15} \cdot \frac{\sqrt{3}}{\pi} \cdot \sigma^2}} where \eqn{\sigma^2} is the random intercept variance. Defaults to \code{TRUE}.}
 
 \item{sep_sample_prop}{numeric scalar. For each ligand/receptor gene, if it is expressed above/below \code{threshold} in all cells of more than a \code{sep_sample_prop} fraction of individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.}
 

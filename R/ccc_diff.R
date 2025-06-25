@@ -14,7 +14,7 @@
 #' @param group_col a character string specifying the name of the column in `metadata` that represents the variable to be tested. The values in this column should match the names specified in `contrast` of [ccc::ccc_test()]. Defaults to `group`.
 #' @param covar_col a character string or a character vector specifying the column(s) in `metadata` that represent covariates to include in the model. Defaults to `NULL`, meaning no covariates are adjusted for.
 #' @param cdr logical scalar. If `TRUE` (the default), calculate and adjust for cellular detection rates (CDR). The CDR of a cell is defined as the number of genes with expression level above `threshold` divided by the total number of genes.
-#' @param id_col a character string specifying the name of the column in `metadata` that contains individual-level (sample-level) ID's. Used for random effect modeling. Must be provided if `lmm_re == TRUE` or `logmm_re == TRUE`; otherwise, this can be omitted. Defaults to `"id"`.
+#' @param id_col a character string specifying the name of the column in `metadata` that contains individual-level (sample-level) ID's. Used for random effect modeling. Must be provided if `lmm_re` is `TRUE` or `logmm_re` is `TRUE`; otherwise, this can be omitted. Defaults to `"id"`.
 #' @param lmm_re logical scalar. Should a random effect be included in the linear component of the hurdle model? If `TRUE` (the default), fit a linear mixed-effects model with a random intercept based on `id_col` for each ligand/receptor gene; if `FALSE`, fit a linear model without random effects.
 #' @param logmm_re logical scalar. Should a random effect be included in the logistic component of the hurdle model? If `TRUE` (the default), fit a logistic mixed-effects model with a random intercept based on `id_col` for each ligand/receptor gene; if `FALSE`, fit a logistic model without random effects.
 #' @param sender a character string or a character vector specifying the cell types as sender (expressing ligands in cell-cell communication). Defaults to all cell types.
@@ -44,7 +44,9 @@
 #' @param control_lmm control parameters for optimization in [lme4::lmer].
 #' @param control_logmm control parameters for optimization in [GLMMadaptive::mixed_model].
 #' @param chunk_size integer scalar. The number of communication events (each defined by a distinct combination of sender, receiver, ligand, and receptor) per chunk. Passed to the `future.chunk.size` argument of [future.apply::future_lapply()]. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.
-#' @param marginal_cores integer scalar. Number of cores to use for parallel computation in [GLMMadaptive::marginal_coefs()]. Only used if `logmm_re == TRUE`. Defaults to 1. If the code is running in parallel using the \pkg{future} package (i.e., `nbrOfWorkers() > 1`), this argument will be forced to 1 to avoid nested parallelism.
+#' @param marginal_cores integer scalar. Number of cores to use for parallel computation in [GLMMadaptive::marginal_coefs()]. Only used if `logmm_re` is `TRUE`. Defaults to 1. If the code is running in parallel using the \pkg{future} package (i.e., `nbrOfWorkers() > 1`), this argument will be forced to 1 to avoid nested parallelism.
+#' @param marginal logical scalar. If `TRUE`, use marginal coefficients for logistic mixed models instead of conditional coefficients. Only used when `logmm_re` is `TRUE`. Defaults to `FALSE`.
+#' @param approx logical scalar. If `TRUE`, use attenuation approximation for estimating marginal coefficients and corresponding covariance in logistic mixed models. Only used when both `marginal` and `logmm_re` are `TRUE`. The approximation divides conditional coefficients by \eqn{\sqrt{1 + \frac{16}{15} \cdot \frac{\sqrt{3}}{\pi} \cdot \sigma^2}} where \eqn{\sigma^2} is the random intercept variance. Defaults to `TRUE`.
 #' @details
 #' `ccc_diff` performs differential cell-cell communication analysis. For each communication event, a hurdle model is fitted to ligand expression data in sender and another hurdle model is fitted to receptor expression data in receiver.
 #' `ccc_enrich` performs enriched cell-cell communication analysis. For each communication event, a hurdle model is fitted to ligand expression data in all cells and another hurdle model is fitted to receptor expression data in all cells.
@@ -147,7 +149,7 @@ ccc_diff <- function(expression_matrix, metadata,
                      threshold = 0, sep_detection = TRUE, sep_prop = 0, sep_n = 0,
                      sandwich = FALSE, control_logm = list(),
                      control_lmm = lme4::lmerControl(), control_logmm = list(),
-                     chunk_size = 10, marginal_cores = 1) {
+                     chunk_size = 10, marginal_cores = 1, marginal = FALSE, approx = TRUE) {
   old_nthreads <- getDTthreads()
   on.exit(setDTthreads(old_nthreads), add = TRUE)
 
@@ -179,6 +181,8 @@ ccc_diff <- function(expression_matrix, metadata,
   assertthat::assert_that(assertthat::is.flag(logmm_re))
   assertthat::assert_that(assertthat::is.flag(sandwich))
   assertthat::assert_that(assertthat::is.flag(sep_detection))
+  assertthat::assert_that(assertthat::is.flag(marginal))
+  assertthat::assert_that(assertthat::is.flag(approx))
 
   required_args <- c("expression_matrix", "metadata")
   passed_args <- names(match.call())[-1]
@@ -511,7 +515,8 @@ ccc_diff <- function(expression_matrix, metadata,
       unique_levels = unique_levels, lmm_re = lmm_re, logmm_re = logmm_re,
       sandwich = sandwich,
       sender = sender, receiver = receiver,
-      ligand = ligand, receptor = receptor, marginal_cores = marginal_cores
+      ligand = ligand, receptor = receptor, marginal_cores = marginal_cores,
+      marginal = marginal, approx = approx, num_ids = num_ids
     )
     if (verbose) {
       p()

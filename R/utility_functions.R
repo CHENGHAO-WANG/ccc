@@ -274,7 +274,7 @@ fisher_combine_pvalues <- function(pvalues) {
 ccc_estimate <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logistic,
                      unique_levels, lmm_re, logmm_re, sandwich,
                      sender, receiver, ligand, receptor, var_to_test = c("group", "class"),
-                     marginal_cores = 1L) {
+                     marginal_cores = 1L, marginal = FALSE, approx = TRUE, num_ids = NULL) {
   dt.est <- data.table()
   var_to_test <- var_to_test[1L]
   var_names <- paste0(var_to_test, unique_levels)
@@ -308,18 +308,55 @@ ccc_estimate <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logis
   
   if (!is.null(fit.l.logistic) && !is.null(fit.r.logistic)) {
     if (isTRUE(logmm_re)) {
-      m_l <- GLMMadaptive::marginal_coefs(fit.l.logistic, std_errors = TRUE, cores = marginal_cores, sandwich = sandwich)
-      m_r <- GLMMadaptive::marginal_coefs(fit.r.logistic, std_errors = TRUE, cores = marginal_cores, sandwich = sandwich)
-      coef_l_logm <- m_l$betas
-      coef_r_logm <- m_l$betas
-      vcov_l_logm <- m_l$var_betas[var_names, var_names]
-      vcov_r_logm <- m_r$var_betas[var_names, var_names]
-      if (isTRUE(sandwich)) {
-        # small cluster number correction
+      if (isTRUE(marginal)) {
+        if (isTRUE(approx)) {
+          # Use attenuation approximation for marginal coefficients
+          # First get conditional coefficients
+          coef_l_logm <- stats::coef(fit.l.logistic)
+          coef_r_logm <- stats::coef(fit.r.logistic)
+          vcov_l_logm <- vcov(fit.l.logistic, sandwich = sandwich)[var_names, var_names]
+          vcov_r_logm <- vcov(fit.r.logistic, sandwich = sandwich)[var_names, var_names]
+          
+          # Get random intercept variances
+          var_l_random <- fit.l.logistic$D[1, 1]
+          var_r_random <- fit.r.logistic$D[1, 1]
+          
+          # Calculate attenuation factors
+          # Factor = 1 / sqrt(1 + (16/15) * (sqrt(3)/pi) * sigma^2)
+          factor_l <- 1 / sqrt(1 + (16/15) * (sqrt(3)/pi) * var_l_random)
+          factor_r <- 1 / sqrt(1 + (16/15) * (sqrt(3)/pi) * var_r_random)
+          
+          # Apply attenuation correction to coefficients
+          coef_l_logm <- coef_l_logm * factor_l
+          coef_r_logm <- coef_r_logm * factor_r
+          
+          # Apply attenuation correction to covariance matrices
+          vcov_l_logm <- vcov_l_logm * (factor_l^2)
+          vcov_r_logm <- vcov_r_logm * (factor_r^2)
+        } else {
+          # Use exact marginal coefficients
+          m_l <- GLMMadaptive::marginal_coefs(fit.l.logistic, std_errors = TRUE, cores = marginal_cores, sandwich = sandwich)
+          m_r <- GLMMadaptive::marginal_coefs(fit.r.logistic, std_errors = TRUE, cores = marginal_cores, sandwich = sandwich)
+          coef_l_logm <- m_l$betas
+          coef_r_logm <- m_r$betas
+          vcov_l_logm <- m_l$var_betas[var_names, var_names]
+          vcov_r_logm <- m_r$var_betas[var_names, var_names]
+        }
+      } else {
+        # Use conditional coefficients (default behavior)
+        coef_l_logm <- stats::coef(fit.l.logistic)
+        coef_r_logm <- stats::coef(fit.r.logistic)
+        vcov_l_logm <- vcov(fit.l.logistic, sandwich = sandwich)[var_names, var_names]
+        vcov_r_logm <- vcov(fit.r.logistic, sandwich = sandwich)[var_names, var_names]
+      }
+      
+      if (isTRUE(sandwich) && isTRUE(marginal)) {
+        # small cluster number correction for marginal coefficients
         vcov_l_logm <- vcov_l_logm * (num_ids / (num_ids - 1))
         vcov_r_logm <- vcov_r_logm * (num_ids / (num_ids - 1))
       }
     } else {
+      # For non-mixed models, marginal and approx arguments are ignored
       coef_l_logm <- stats::coef(fit.l.logistic)
       coef_r_logm <- stats::coef(fit.r.logistic)
       if (isTRUE(sandwich)) {
