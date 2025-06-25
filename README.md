@@ -1,5 +1,7 @@
 # ccc: differential Cell-Cell Communication analysis
 
+![Under Development](https://img.shields.io/badge/status-under%20development-orange)
+
 ## Installation
 
 To install `ccc` from GitHub, use the following command:
