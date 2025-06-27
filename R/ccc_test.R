@@ -14,6 +14,11 @@
 #'  }
 #' Only used if `test_type = "z"`. Defaults to "greater" for `ccc_enrich`. \eqn{c} is specified using `c_linear`, `c_logistic`, and `c_hurdle` arguments.
 #' @param c_linear,c_logistic,c_hurdle numeric scalar. `c_linear` is for the tests on the linear component, `c_logistic` is for the tests on the logistic component, and `c_hurdle` is for the tests on the hurdle model. Default to 0. Must be non-negative for `ha = "greater.abs"` and `ha = "less.abs"`.
+#' @param score a character string specifying the method for computing effect sizes.
+#'  \itemize{
+#'   \item \dQuote{\code{product}}: (the default) effect sizes are computed as the product of ligand and receptor expressions. For linear component: product of conditional mean expressions. For logistic component: product of expression rates (probabilities). For hurdle: product of all four components.
+#'   \item \dQuote{\code{sum}}: effect sizes are computed as the sum of ligand and receptor expressions. For linear component: sum of conditional mean expressions. For logistic component: sum of log-odds (coefficients). For hurdle: sum of (probability × conditional mean) for ligand and receptor separately.
+#'  }
 #' @param verbose logical scalar. If `TRUE` (the default), display a progress bar. The default handler is "progress". This package uses the \pkg{progressr} framework for progress reporting, so users can customize the progress bar. See [progressr::handlers()] for customizing progress bar behavior. Note that progress bars are not displayed in non-interactive mode or R markdown.
 #' @param padj_method a character string for multiple testing correction method. This is passed to [stats::p.adjust()]. Defaults to "BH".
 #' @param cell_type_padj logical scalar. If `TRUE` (the default), adjust p-values for each sender-receiver pair.
@@ -23,11 +28,11 @@
 #' This function performs Wald tests based on the output of [ccc::ccc_diff()] or [ccc::ccc_enrich()].
 #' By default, Wald Chisq tests are performed for differential ccc analysis and one-sided Wald Z tests are performed for enriched ccc analysis (alternative hypothesis: communication event in target cell types > background cell types).
 #' 
-#' If the linear component is fitted successfully, this function performs a Wald test on the product of ligand and receptor conditional mean expressions (condition on expression levels > `threshold`).
-#' If the logistic componenet is fitted successfully, this function performs a Wald test on the product of ligand and receptor expression rates (rates of expression levels > `threshold`).
-#' If both components are fitted successfully, this function performs a Wald test on the product of ligand and receptor mean expression levels (conditional mean of ligand \verb{*} expression rate of ligand \verb{*} conditional mean of receptor \verb{*} expression rate of receptor).
+#' If the linear component is fitted successfully, this function performs a Wald test on the product (or sum, if `score = "sum"`) of ligand and receptor conditional mean expressions (condition on expression levels > `threshold`).
+#' If the logistic componenet is fitted successfully, this function performs a Wald test on the product of ligand and receptor expression rates (`score = "product"`) or the sum of ligand and receptor log-odds (`score = "sum"`).
+#' If both components are fitted successfully, this function performs a Wald test on the combined effect. For `score = "product"`: conditional mean of ligand \verb{*} expression rate of ligand \verb{*} conditional mean of receptor \verb{*} expression rate of receptor. For `score = "sum"`: (expression rate of ligand \verb{*} conditional mean of ligand) + (expression rate of receptor \verb{*} conditional mean of receptor).
 #' The delta method is applied to obtain the relevant standard errors, using the estimates from the output of `ccc_*`.
-#' The effect sizes are computed as the product vector of ligand and receptor expressions (conditional mean expressions, expression rates, and mean expression levels), with each element corresponds to a level of `group_col`, multiplied by `contrast` (`ccc_diff`), or the difference in the product of ligand and receptor expressions comparing target against background cell types (`ccc_enrich`). 
+#' The effect sizes are computed as the product or sum (depending on `score`) of ligand and receptor expressions. For `score = "product"`: conditional mean expressions, expression rates, and mean expression levels are multiplied. For `score = "sum"`: conditional mean expressions and log-odds are summed (with appropriate transformations for hurdle model). Each element corresponds to a level of `group_col`, multiplied by `contrast` (`ccc_diff`), or the difference comparing target against background cell types (`ccc_enrich`). 
 #' 
 #' If `ha = "greater.abs"`, the test statistic is \eqn{(|\hat{\theta}| - c)/se(\hat{\theta})}, and the p-value is two-sided.
 #' If `ha = "less.abs"`, the test statistics are \eqn{(\hat{\theta} - c)/se(\hat{\theta})} and \eqn{(\hat{\theta} + c)/se(\hat{\theta})}. The p-value is the maximum of the two one-sided tests.
@@ -75,14 +80,21 @@
 #' b.result2 <- ccc_test(b, test_type = "z", ha = "greater",
 #'     c_linear = 0.1, c_logistic = 0.1, c_hurdle = 0.1)
 #' head(b.result2)
+#' 
+#' ## Using sum scoring method
+#' a.result.sum <- ccc_test(a, contrast = contrast2, score = "sum")
+#' head(a.result.sum)
+#' 
+#' b.result.sum <- ccc_test(b, score = "sum")
+#' head(b.result.sum)
 #' }
 #' 
 #' @export
 
 ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
                      c_linear = 0, c_logistic = 0, c_hurdle = 0,
-                     verbose = TRUE, padj_method = "BH", cell_type_padj = TRUE,
-                     chunk_size = 10) {
+                     score = c("product", "sum"), verbose = TRUE, padj_method = "BH", 
+                     cell_type_padj = TRUE, chunk_size = 10) {
   # verbose
   assertthat::assert_that(assertthat::is.flag(verbose))
   
@@ -101,6 +113,7 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
   
   assertthat::assert_that(assertthat::is.flag(cell_type_padj))
   padj_method <- match.arg(padj_method, stats::p.adjust.methods)
+  score <- match.arg(score)
   
   if (!is.null(test_type)) {
     test_type <- match.arg(test_type, choices = c("chisq", "z"))
@@ -201,19 +214,37 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
     dt.test <- data.table()
     
     if (isTRUE(test.linear)) {
-      effect_size_linear <- contrast %*% (coef_l_lm * coef_r_lm)
-      gradient_matrix_linear <- matrix(0, nrow = nrow(contrast), ncol = length(var_names) * 2L)
-      
-      for (i in seq_len(nrow(contrast))) {
-        for (j in seq_along(var_names)) {
-          var_level <- var_names[j]
-          level <- unique_levels[j]
-          
-          ind_l_lm <- which(names(coef_l_lm) == var_level)
-          ind_r_lm <- which(names(coef_r_lm) == var_level) + length(var_names)
-          
-          gradient_matrix_linear[i, ind_l_lm] <- contrast[i, level] * coef_r_lm[var_level]
-          gradient_matrix_linear[i, ind_r_lm] <- contrast[i, level] * coef_l_lm[var_level]
+      if (score == "product") {
+        effect_size_linear <- contrast %*% (coef_l_lm * coef_r_lm)
+        gradient_matrix_linear <- matrix(0, nrow = nrow(contrast), ncol = length(var_names) * 2L)
+        
+        for (i in seq_len(nrow(contrast))) {
+          for (j in seq_along(var_names)) {
+            var_level <- var_names[j]
+            level <- unique_levels[j]
+            
+            ind_l_lm <- which(names(coef_l_lm) == var_level)
+            ind_r_lm <- which(names(coef_r_lm) == var_level) + length(var_names)
+            
+            gradient_matrix_linear[i, ind_l_lm] <- contrast[i, level] * coef_r_lm[var_level]
+            gradient_matrix_linear[i, ind_r_lm] <- contrast[i, level] * coef_l_lm[var_level]
+          }
+        }
+      } else if (score == "sum") {
+        effect_size_linear <- contrast %*% (coef_l_lm + coef_r_lm)
+        gradient_matrix_linear <- matrix(0, nrow = nrow(contrast), ncol = length(var_names) * 2L)
+        
+        for (i in seq_len(nrow(contrast))) {
+          for (j in seq_along(var_names)) {
+            var_level <- var_names[j]
+            level <- unique_levels[j]
+            
+            ind_l_lm <- which(names(coef_l_lm) == var_level)
+            ind_r_lm <- which(names(coef_r_lm) == var_level) + length(var_names)
+            
+            gradient_matrix_linear[i, ind_l_lm] <- contrast[i, level]
+            gradient_matrix_linear[i, ind_r_lm] <- contrast[i, level]
+          }
         }
       }
       
@@ -261,19 +292,37 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
     }
     
     if (isTRUE(test.logistic)) {
-      effect_size_logistic <- contrast %*% (plogis(coef_l_logm) * plogis(coef_r_logm))
-      gradient_matrix_logistic <- matrix(0, nrow = nrow(contrast), ncol = length(var_names) * 2L)
-      
-      for (i in seq_len(nrow(contrast))) {
-        for (j in seq_along(var_names)) {
-          var_level <- var_names[j]
-          level <- unique_levels[j]
-          
-          ind_l_logm <- which(names(coef_l_logm) == var_level)
-          ind_r_logm <- which(names(coef_r_logm) == var_level) + length(var_names)
-          
-          gradient_matrix_logistic[i, ind_l_logm] <- contrast[i, level] * plogis(coef_r_logm[var_level]) * dlogis(coef_l_logm[var_level])
-          gradient_matrix_logistic[i, ind_r_logm] <- contrast[i, level] * plogis(coef_l_logm[var_level]) * dlogis(coef_r_logm[var_level])
+      if (score == "product") {
+        effect_size_logistic <- contrast %*% (plogis(coef_l_logm) * plogis(coef_r_logm))
+        gradient_matrix_logistic <- matrix(0, nrow = nrow(contrast), ncol = length(var_names) * 2L)
+        
+        for (i in seq_len(nrow(contrast))) {
+          for (j in seq_along(var_names)) {
+            var_level <- var_names[j]
+            level <- unique_levels[j]
+            
+            ind_l_logm <- which(names(coef_l_logm) == var_level)
+            ind_r_logm <- which(names(coef_r_logm) == var_level) + length(var_names)
+            
+            gradient_matrix_logistic[i, ind_l_logm] <- contrast[i, level] * plogis(coef_r_logm[var_level]) * dlogis(coef_l_logm[var_level])
+            gradient_matrix_logistic[i, ind_r_logm] <- contrast[i, level] * plogis(coef_l_logm[var_level]) * dlogis(coef_r_logm[var_level])
+          }
+        }
+      } else if (score == "sum") {
+        effect_size_logistic <- contrast %*% (coef_l_logm + coef_r_logm)
+        gradient_matrix_logistic <- matrix(0, nrow = nrow(contrast), ncol = length(var_names) * 2L)
+        
+        for (i in seq_len(nrow(contrast))) {
+          for (j in seq_along(var_names)) {
+            var_level <- var_names[j]
+            level <- unique_levels[j]
+            
+            ind_l_logm <- which(names(coef_l_logm) == var_level)
+            ind_r_logm <- which(names(coef_r_logm) == var_level) + length(var_names)
+            
+            gradient_matrix_logistic[i, ind_l_logm] <- contrast[i, level]
+            gradient_matrix_logistic[i, ind_r_logm] <- contrast[i, level]
+          }
         }
       }
       
@@ -322,23 +371,45 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
     }
     
     if (isTRUE(test.linear) && isTRUE(test.logistic)) {
-      effect_size_hurdle <- contrast %*% (coef_l_lm * coef_r_lm * plogis(coef_l_logm) * plogis(coef_r_logm))
-      gradient_matrix_hurdle <- matrix(0, nrow = nrow(contrast), ncol = length(var_names) * 4L)
-      
-      for (i in seq_len(nrow(contrast))) {
-        for (j in seq_along(var_names)) {
-          var_level <- var_names[j]
-          level <- unique_levels[j]
-          
-          ind_l_lm <- which(names(coef_l_lm) == var_level)
-          ind_l_logm <- which(names(coef_l_logm) == var_level) + length(var_names)
-          ind_r_lm <- which(names(coef_r_lm) == var_level) + length(var_names) * 2L
-          ind_r_logm <- which(names(coef_r_logm) == var_level) + length(var_names) * 3L
-          
-          gradient_matrix_hurdle[i, ind_l_lm] <- contrast[i, level] * coef_r_lm[var_level] * plogis(coef_l_logm[var_level]) * plogis(coef_r_logm[var_level])
-          gradient_matrix_hurdle[i, ind_l_logm] <- contrast[i, level] * coef_l_lm[var_level] * coef_r_lm[var_level] * plogis(coef_r_logm[var_level]) * dlogis(coef_l_logm[var_level])
-          gradient_matrix_hurdle[i, ind_r_lm] <- contrast[i, level] * coef_l_lm[var_level] * plogis(coef_l_logm[var_level]) * plogis(coef_r_logm[var_level])
-          gradient_matrix_hurdle[i, ind_r_logm] <- contrast[i, level] * coef_l_lm[var_level] * coef_r_lm[var_level] * plogis(coef_l_logm[var_level]) * dlogis(coef_r_logm[var_level])
+      if (score == "product") {
+        effect_size_hurdle <- contrast %*% (coef_l_lm * coef_r_lm * plogis(coef_l_logm) * plogis(coef_r_logm))
+        gradient_matrix_hurdle <- matrix(0, nrow = nrow(contrast), ncol = length(var_names) * 4L)
+        
+        for (i in seq_len(nrow(contrast))) {
+          for (j in seq_along(var_names)) {
+            var_level <- var_names[j]
+            level <- unique_levels[j]
+            
+            ind_l_lm <- which(names(coef_l_lm) == var_level)
+            ind_l_logm <- which(names(coef_l_logm) == var_level) + length(var_names)
+            ind_r_lm <- which(names(coef_r_lm) == var_level) + length(var_names) * 2L
+            ind_r_logm <- which(names(coef_r_logm) == var_level) + length(var_names) * 3L
+            
+            gradient_matrix_hurdle[i, ind_l_lm] <- contrast[i, level] * coef_r_lm[var_level] * plogis(coef_l_logm[var_level]) * plogis(coef_r_logm[var_level])
+            gradient_matrix_hurdle[i, ind_l_logm] <- contrast[i, level] * coef_l_lm[var_level] * coef_r_lm[var_level] * plogis(coef_r_logm[var_level]) * dlogis(coef_l_logm[var_level])
+            gradient_matrix_hurdle[i, ind_r_lm] <- contrast[i, level] * coef_l_lm[var_level] * plogis(coef_l_logm[var_level]) * plogis(coef_r_logm[var_level])
+            gradient_matrix_hurdle[i, ind_r_logm] <- contrast[i, level] * coef_l_lm[var_level] * coef_r_lm[var_level] * plogis(coef_l_logm[var_level]) * dlogis(coef_r_logm[var_level])
+          }
+        }
+      } else if (score == "sum") {
+        effect_size_hurdle <- contrast %*% (plogis(coef_l_logm) * coef_l_lm + plogis(coef_r_logm) * coef_r_lm)
+        gradient_matrix_hurdle <- matrix(0, nrow = nrow(contrast), ncol = length(var_names) * 4L)
+        
+        for (i in seq_len(nrow(contrast))) {
+          for (j in seq_along(var_names)) {
+            var_level <- var_names[j]
+            level <- unique_levels[j]
+            
+            ind_l_lm <- which(names(coef_l_lm) == var_level)
+            ind_l_logm <- which(names(coef_l_logm) == var_level) + length(var_names)
+            ind_r_lm <- which(names(coef_r_lm) == var_level) + length(var_names) * 2L
+            ind_r_logm <- which(names(coef_r_logm) == var_level) + length(var_names) * 3L
+            
+            gradient_matrix_hurdle[i, ind_l_lm] <- contrast[i, level] * plogis(coef_l_logm[var_level])
+            gradient_matrix_hurdle[i, ind_l_logm] <- contrast[i, level] * coef_l_lm[var_level] * dlogis(coef_l_logm[var_level])
+            gradient_matrix_hurdle[i, ind_r_lm] <- contrast[i, level] * plogis(coef_r_logm[var_level])
+            gradient_matrix_hurdle[i, ind_r_logm] <- contrast[i, level] * coef_r_lm[var_level] * dlogis(coef_r_logm[var_level])
+          }
         }
       }
       vcov_hurdle <- Matrix::bdiag(vcov_l_lm, vcov_l_logm, vcov_r_lm, vcov_r_logm)
