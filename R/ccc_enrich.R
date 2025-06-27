@@ -15,8 +15,7 @@ ccc_enrich <- function(expression_matrix, metadata,
                       verbose = TRUE, min_cell = 10,
                       min_pct = 0.01, large_n = 1, min_total_pct = 0,
                       threshold = 0, sep_detection = TRUE, sep_sample_prop = 0, sep_sample_n = 0,
-                      sandwich = FALSE, control_logm = list(),
-                      control_lmm = lme4::lmerControl(), control_logmm = list(),
+                      sandwich = FALSE, linear_args = list(), logistic_args = list(),
                       chunk_size = 10, marginal_cores = 1, marginal = FALSE, approx = TRUE) {
   old_nthreads <- getDTthreads()
   on.exit(setDTthreads(old_nthreads), add = TRUE)
@@ -343,9 +342,9 @@ ccc_enrich <- function(expression_matrix, metadata,
                 stop("Too few cells expressing the ligand/receptor gene above the `threshold` for fitting a linear model.")
               } else {
                 if (isTRUE(lmm_re)) {
-                  lmer(formula, data = data, control = control_lmm)
+                  do.call(lmer, c(list(formula = formula, data = data), linear_args))
                 } else {
-                  lm(formula, data = data)
+                  do.call(lm, c(list(formula = formula, data = data), linear_args))
                 }
               }
             } else if (part == "logistic") {
@@ -354,9 +353,9 @@ ccc_enrich <- function(expression_matrix, metadata,
                 stop("Complete or Quasi-complete separation detected.")
               } else {
                 if (isTRUE(logmm_re)) {
-                  mixed_model(fixed = formula$fixed, random = formula$random, family = binomial(), data = data, control = control_logmm)
+                  do.call(mixed_model, c(list(fixed = formula$fixed, random = formula$random, family = binomial(), data = data), logistic_args))
                 } else {
-                  glm(formula, family = binomial(), data = data, control = control_logm)
+                  do.call(glm, c(list(formula = formula, family = binomial(), data = data), logistic_args))
                 }
               }
             }

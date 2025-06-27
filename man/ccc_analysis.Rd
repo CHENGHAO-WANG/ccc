@@ -31,9 +31,8 @@ ccc_diff(
   sep_prop = 0,
   sep_n = 0,
   sandwich = FALSE,
-  control_logm = list(),
-  control_lmm = lme4::lmerControl(),
-  control_logmm = list(),
+  linear_args = list(),
+  logistic_args = list(),
   chunk_size = 10,
   marginal_cores = 1,
   marginal = FALSE,
@@ -64,9 +63,8 @@ ccc_enrich(
   sep_sample_prop = 0,
   sep_sample_n = 0,
   sandwich = FALSE,
-  control_logm = list(),
-  control_lmm = lme4::lmerControl(),
-  control_logmm = list(),
+  linear_args = list(),
+  logistic_args = list(),
   chunk_size = 10,
   marginal_cores = 1,
   marginal = FALSE,
@@ -129,11 +127,9 @@ ccc_enrich(
 
 \item{sandwich}{logical scalar. If \code{TRUE}, sandwich standard errors are used in the calculations. Defaults to \code{FALSE}.}
 
-\item{control_logm}{control parameters for optimization in \link[stats:glm]{stats::glm}.}
+\item{linear_args}{a list of additional arguments to pass to linear model functions (\link[stats:lm]{stats::lm} when \code{lmm_re = FALSE}, \link[lme4:lmer]{lme4::lmer} when \code{lmm_re = TRUE}). Defaults to an empty list.}
 
-\item{control_lmm}{control parameters for optimization in \link[lme4:lmer]{lme4::lmer}.}
-
-\item{control_logmm}{control parameters for optimization in \link[GLMMadaptive:mixed_model]{GLMMadaptive::mixed_model}.}
+\item{logistic_args}{a list of additional arguments to pass to logistic model functions (\link[stats:glm]{stats::glm} when \code{logmm_re = FALSE}, \link[GLMMadaptive:mixed_model]{GLMMadaptive::mixed_model} when \code{logmm_re = TRUE}). Defaults to an empty list.}
 
 \item{chunk_size}{integer scalar. The number of communication events (each defined by a distinct combination of sender, receiver, ligand, and receptor) per chunk. Passed to the \code{future.chunk.size} argument of \code{\link[future.apply:future_lapply]{future.apply::future_lapply()}}. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.}
 

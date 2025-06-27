@@ -40,9 +40,8 @@
 #' @param sep_sample_prop numeric scalar. For each ligand/receptor gene, if it is expressed above/below `threshold` in all cells of more than a `sep_sample_prop` fraction of individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.
 #' @param sep_sample_n numeric scalar. For each ligand/receptor gene, if it is expressed above/below `threshold` in all cells of more than `sep_sample_n` individuals/samples, this is considered complete or quasi-complete separation and the logistic model for that gene is skipped.
 #' @param sandwich logical scalar. If `TRUE`, sandwich standard errors are used in the calculations. Defaults to `FALSE`.
-#' @param control_logm control parameters for optimization in [stats::glm].
-#' @param control_lmm control parameters for optimization in [lme4::lmer].
-#' @param control_logmm control parameters for optimization in [GLMMadaptive::mixed_model].
+#' @param linear_args a list of additional arguments to pass to linear model functions ([stats::lm] when `lmm_re = FALSE`, [lme4::lmer] when `lmm_re = TRUE`). Defaults to an empty list.
+#' @param logistic_args a list of additional arguments to pass to logistic model functions ([stats::glm] when `logmm_re = FALSE`, [GLMMadaptive::mixed_model] when `logmm_re = TRUE`). Defaults to an empty list.
 #' @param chunk_size integer scalar. The number of communication events (each defined by a distinct combination of sender, receiver, ligand, and receptor) per chunk. Passed to the `future.chunk.size` argument of [future.apply::future_lapply()]. Defaults to 10. To enable parallelization, users should use the \pkg{future} package.
 #' @param marginal_cores integer scalar. Number of cores to use for parallel computation in [GLMMadaptive::marginal_coefs()]. Only used if `logmm_re` is `TRUE`. Defaults to 1. If the code is running in parallel using the \pkg{future} package (i.e., `nbrOfWorkers() > 1`), this argument will be forced to 1 to avoid nested parallelism.
 #' @param marginal logical scalar. If `TRUE`, use marginal coefficients for logistic mixed models instead of conditional coefficients. Only used when `logmm_re` is `TRUE`. Defaults to `FALSE`.
@@ -147,8 +146,7 @@ ccc_diff <- function(expression_matrix, metadata,
                      verbose = TRUE, min_cell = 10,
                      min_pct = 0.01, large_n = 2, min_total_pct = 0,
                      threshold = 0, sep_detection = TRUE, sep_prop = 0, sep_n = 0,
-                     sandwich = FALSE, control_logm = list(),
-                     control_lmm = lme4::lmerControl(), control_logmm = list(),
+                     sandwich = FALSE, linear_args = list(), logistic_args = list(),
                      chunk_size = 10, marginal_cores = 1, marginal = FALSE, approx = TRUE) {
   old_nthreads <- getDTthreads()
   on.exit(setDTthreads(old_nthreads), add = TRUE)
@@ -450,9 +448,9 @@ ccc_diff <- function(expression_matrix, metadata,
                 stop("Too few cells expressing the ligand/receptor gene above the `threshold` for fitting a linear model.")
               } else {
                 if (isTRUE(lmm_re)) {
-                  lmer(formula, data = data, control = control_lmm)
+                  do.call(lmer, c(list(formula = formula, data = data), linear_args))
                 } else {
-                  lm(formula, data = data)
+                  do.call(lm, c(list(formula = formula, data = data), linear_args))
                 }
               }
             } else if (part == "logistic") {
@@ -461,9 +459,9 @@ ccc_diff <- function(expression_matrix, metadata,
                 stop("Complete or Quasi-complete separation detected.")
               } else {
                 if (isTRUE(logmm_re)) {
-                  mixed_model(fixed = formula$fixed, random = formula$random, family = binomial(), data = data, control = control_logmm)
+                  do.call(mixed_model, c(list(fixed = formula$fixed, random = formula$random, family = binomial(), data = data), logistic_args))
                 } else {
-                  glm(formula, family = binomial(), data = data, control = control_logm)
+                  do.call(glm, c(list(formula = formula, family = binomial(), data = data), logistic_args))
                 }
               }
             }
