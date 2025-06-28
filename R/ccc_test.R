@@ -214,42 +214,22 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
     dt.test <- data.table()
     
     if (isTRUE(test.linear)) {
-      if (score == "product") {
-        effect_size_linear <- contrast %*% (coef_l_lm * coef_r_lm)
-        gradient_matrix_linear <- matrix(0, nrow = nrow(contrast), ncol = length(var_names) * 2L)
-        
-        for (i in seq_len(nrow(contrast))) {
-          for (j in seq_along(var_names)) {
-            var_level <- var_names[j]
-            level <- unique_levels[j]
-            
-            ind_l_lm <- which(names(coef_l_lm) == var_level)
-            ind_r_lm <- which(names(coef_r_lm) == var_level) + length(var_names)
-            
-            gradient_matrix_linear[i, ind_l_lm] <- contrast[i, level] * coef_r_lm[var_level]
-            gradient_matrix_linear[i, ind_r_lm] <- contrast[i, level] * coef_l_lm[var_level]
-          }
-        }
-      } else if (score == "sum") {
+      if (score == "sum") {
+        # EXACT COMPUTATION: Linear combination
         effect_size_linear <- contrast %*% (coef_l_lm + coef_r_lm)
-        gradient_matrix_linear <- matrix(0, nrow = nrow(contrast), ncol = length(var_names) * 2L)
-        
-        for (i in seq_len(nrow(contrast))) {
-          for (j in seq_along(var_names)) {
-            var_level <- var_names[j]
-            level <- unique_levels[j]
-            
-            ind_l_lm <- which(names(coef_l_lm) == var_level)
-            ind_r_lm <- which(names(coef_r_lm) == var_level) + length(var_names)
-            
-            gradient_matrix_linear[i, ind_l_lm] <- contrast[i, level]
-            gradient_matrix_linear[i, ind_r_lm] <- contrast[i, level]
-          }
-        }
+        # Exact variance for linear combination (no delta method needed)
+        cov_effect_size_linear <- contrast %*% (vcov_l_lm + vcov_r_lm) %*% t(contrast)
+      } else if (score == "product") {
+        # EXACT COMPUTATION: Product of independent coefficients
+        effect_size_linear <- contrast %*% (coef_l_lm * coef_r_lm)
+        # Exact product covariance using outer products (including Hadamard term)
+        product_cov_linear <- (coef_l_lm %o% coef_l_lm) * vcov_r_lm + 
+                              (coef_r_lm %o% coef_r_lm) * vcov_l_lm + 
+                              vcov_l_lm * vcov_r_lm
+        # Apply contrast exactly
+        cov_effect_size_linear <- contrast %*% product_cov_linear %*% t(contrast)
       }
       
-      vcov_linear <- Matrix::bdiag(vcov_l_lm, vcov_r_lm)
-      cov_effect_size_linear <- gradient_matrix_linear %*% as.matrix(vcov_linear) %*% t(gradient_matrix_linear)
       if (test_type == "chisq") {
         test_stat_linear <- t(effect_size_linear) %*% chol2inv(chol(cov_effect_size_linear)) %*% effect_size_linear
         pvalue_linear <- pchisq(test_stat_linear, df = nrow(contrast), lower.tail = FALSE)
@@ -292,42 +272,31 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
     }
     
     if (isTRUE(test.logistic)) {
-      if (score == "product") {
-        effect_size_logistic <- contrast %*% (plogis(coef_l_logm) * plogis(coef_r_logm))
-        gradient_matrix_logistic <- matrix(0, nrow = nrow(contrast), ncol = length(var_names) * 2L)
-        
-        for (i in seq_len(nrow(contrast))) {
-          for (j in seq_along(var_names)) {
-            var_level <- var_names[j]
-            level <- unique_levels[j]
-            
-            ind_l_logm <- which(names(coef_l_logm) == var_level)
-            ind_r_logm <- which(names(coef_r_logm) == var_level) + length(var_names)
-            
-            gradient_matrix_logistic[i, ind_l_logm] <- contrast[i, level] * plogis(coef_r_logm[var_level]) * dlogis(coef_l_logm[var_level])
-            gradient_matrix_logistic[i, ind_r_logm] <- contrast[i, level] * plogis(coef_l_logm[var_level]) * dlogis(coef_r_logm[var_level])
-          }
-        }
-      } else if (score == "sum") {
+      if (score == "sum") {
+        # EXACT COMPUTATION: Linear combination of log-odds
         effect_size_logistic <- contrast %*% (coef_l_logm + coef_r_logm)
-        gradient_matrix_logistic <- matrix(0, nrow = nrow(contrast), ncol = length(var_names) * 2L)
+        # Exact variance for linear combination (no delta method needed)
+        cov_effect_size_logistic <- contrast %*% (vcov_l_logm + vcov_r_logm) %*% t(contrast)
+      } else if (score == "product") {
+        # HYBRID COMPUTATION: Delta method for probabilities, then exact for products
+        # Step 1: Compute probability means and covariances using delta method
+        p_l_mean <- plogis(coef_l_logm)
+        p_r_mean <- plogis(coef_r_logm)
         
-        for (i in seq_len(nrow(contrast))) {
-          for (j in seq_along(var_names)) {
-            var_level <- var_names[j]
-            level <- unique_levels[j]
-            
-            ind_l_logm <- which(names(coef_l_logm) == var_level)
-            ind_r_logm <- which(names(coef_r_logm) == var_level) + length(var_names)
-            
-            gradient_matrix_logistic[i, ind_l_logm] <- contrast[i, level]
-            gradient_matrix_logistic[i, ind_r_logm] <- contrast[i, level]
-          }
-        }
+        # Delta method for probability covariances
+        grad_l <- diag(dlogis(coef_l_logm))
+        grad_r <- diag(dlogis(coef_r_logm))
+        p_l_cov <- grad_l %*% vcov_l_logm %*% grad_l
+        p_r_cov <- grad_r %*% vcov_r_logm %*% grad_r
+        
+        # Step 2: Exact computation for probability products using outer products
+        effect_size_logistic <- contrast %*% (p_l_mean * p_r_mean)
+        product_cov_logistic <- (p_l_mean %o% p_l_mean) * p_r_cov + 
+                               (p_r_mean %o% p_r_mean) * p_l_cov + 
+                               p_l_cov * p_r_cov
+        # Apply contrast exactly
+        cov_effect_size_logistic <- contrast %*% product_cov_logistic %*% t(contrast)
       }
-      
-      vcov_logistic <- Matrix::bdiag(vcov_l_logm, vcov_r_logm)
-      cov_effect_size_logistic <- gradient_matrix_logistic %*% as.matrix(vcov_logistic) %*% t(gradient_matrix_logistic)
       
       if (test_type == "chisq") {
         test_stat_logistic <- t(effect_size_logistic) %*% chol2inv(chol(cov_effect_size_logistic)) %*% effect_size_logistic
@@ -371,53 +340,80 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
     }
     
     if (isTRUE(test.linear) && isTRUE(test.logistic)) {
-      if (score == "product") {
-        effect_size_hurdle <- contrast %*% (coef_l_lm * coef_r_lm * plogis(coef_l_logm) * plogis(coef_r_logm))
-        gradient_matrix_hurdle <- matrix(0, nrow = nrow(contrast), ncol = length(var_names) * 4L)
-        
-        for (i in seq_len(nrow(contrast))) {
-          for (j in seq_along(var_names)) {
-            var_level <- var_names[j]
-            level <- unique_levels[j]
-            
-            ind_l_lm <- which(names(coef_l_lm) == var_level)
-            ind_l_logm <- which(names(coef_l_logm) == var_level) + length(var_names)
-            ind_r_lm <- which(names(coef_r_lm) == var_level) + length(var_names) * 2L
-            ind_r_logm <- which(names(coef_r_logm) == var_level) + length(var_names) * 3L
-            
-            gradient_matrix_hurdle[i, ind_l_lm] <- contrast[i, level] * coef_r_lm[var_level] * plogis(coef_l_logm[var_level]) * plogis(coef_r_logm[var_level])
-            gradient_matrix_hurdle[i, ind_l_logm] <- contrast[i, level] * coef_l_lm[var_level] * coef_r_lm[var_level] * plogis(coef_r_logm[var_level]) * dlogis(coef_l_logm[var_level])
-            gradient_matrix_hurdle[i, ind_r_lm] <- contrast[i, level] * coef_l_lm[var_level] * plogis(coef_l_logm[var_level]) * plogis(coef_r_logm[var_level])
-            gradient_matrix_hurdle[i, ind_r_logm] <- contrast[i, level] * coef_l_lm[var_level] * coef_r_lm[var_level] * plogis(coef_l_logm[var_level]) * dlogis(coef_r_logm[var_level])
-          }
+      if (score == "sum") {
+        # HYBRID COMPUTATION: Exact for p*μ products, then exact sum
+        # Get probability components (already computed above if logistic was processed)
+        if (!exists("p_l_mean")) {
+          p_l_mean <- plogis(coef_l_logm)
+          p_r_mean <- plogis(coef_r_logm)
+          grad_l <- diag(dlogis(coef_l_logm))
+          grad_r <- diag(dlogis(coef_r_logm))
+          p_l_cov <- grad_l %*% vcov_l_logm %*% grad_l
+          p_r_cov <- grad_r %*% vcov_r_logm %*% grad_r
         }
-      } else if (score == "sum") {
-        effect_size_hurdle <- contrast %*% (plogis(coef_l_logm) * coef_l_lm + plogis(coef_r_logm) * coef_r_lm)
-        gradient_matrix_hurdle <- matrix(0, nrow = nrow(contrast), ncol = length(var_names) * 4L)
         
-        for (i in seq_len(nrow(contrast))) {
-          for (j in seq_along(var_names)) {
-            var_level <- var_names[j]
-            level <- unique_levels[j]
-            
-            ind_l_lm <- which(names(coef_l_lm) == var_level)
-            ind_l_logm <- which(names(coef_l_logm) == var_level) + length(var_names)
-            ind_r_lm <- which(names(coef_r_lm) == var_level) + length(var_names) * 2L
-            ind_r_logm <- which(names(coef_r_logm) == var_level) + length(var_names) * 3L
-            
-            gradient_matrix_hurdle[i, ind_l_lm] <- contrast[i, level] * plogis(coef_l_logm[var_level])
-            gradient_matrix_hurdle[i, ind_l_logm] <- contrast[i, level] * coef_l_lm[var_level] * dlogis(coef_l_logm[var_level])
-            gradient_matrix_hurdle[i, ind_r_lm] <- contrast[i, level] * plogis(coef_r_logm[var_level])
-            gradient_matrix_hurdle[i, ind_r_logm] <- contrast[i, level] * coef_r_lm[var_level] * dlogis(coef_r_logm[var_level])
-          }
+        # Exact computation for p*μ products
+        term_l_mean <- p_l_mean * coef_l_lm  # E[p_l * μ_l]
+        term_r_mean <- p_r_mean * coef_r_lm  # E[p_r * μ_r]
+        
+        # Exact covariance for p*μ products using outer products (including Hadamard terms)
+        term_l_cov <- (p_l_mean %o% p_l_mean) * vcov_l_lm + 
+                      (coef_l_lm %o% coef_l_lm) * p_l_cov + 
+                      vcov_l_lm * p_l_cov
+        term_r_cov <- (p_r_mean %o% p_r_mean) * vcov_r_lm + 
+                      (coef_r_lm %o% coef_r_lm) * p_r_cov + 
+                      vcov_r_lm * p_r_cov
+        
+        # Exact computation for sum
+        effect_size_hurdle <- contrast %*% (term_l_mean + term_r_mean)
+        cov_effect_size_hurdle <- contrast %*% (term_l_cov + term_r_cov) %*% t(contrast)
+      } else if (score == "product") {
+        # HYBRID COMPUTATION: Build up from components
+        # Linear product component (already computed if linear was processed)
+        if (!exists("product_cov_linear")) {
+          linear_product_mean <- coef_l_lm * coef_r_lm
+          product_cov_linear <- (coef_l_lm %o% coef_l_lm) * vcov_r_lm + 
+                               (coef_r_lm %o% coef_r_lm) * vcov_l_lm + 
+                               vcov_l_lm * vcov_r_lm
+        } else {
+          linear_product_mean <- coef_l_lm * coef_r_lm
         }
+        
+        # Probability product component (already computed if logistic was processed)
+        if (!exists("product_cov_logistic")) {
+          p_l_mean <- plogis(coef_l_logm)
+          p_r_mean <- plogis(coef_r_logm)
+          grad_l <- diag(dlogis(coef_l_logm))
+          grad_r <- diag(dlogis(coef_r_logm))
+          p_l_cov <- grad_l %*% vcov_l_logm %*% grad_l
+          p_r_cov <- grad_r %*% vcov_r_logm %*% grad_r
+          prob_product_mean <- p_l_mean * p_r_mean
+          product_cov_logistic <- (p_l_mean %o% p_l_mean) * p_r_cov + 
+                                 (p_r_mean %o% p_r_mean) * p_l_cov + 
+                                 p_l_cov * p_r_cov
+        } else {
+          prob_product_mean <- p_l_mean * p_r_mean
+        }
+        
+        # Exact computation for hurdle = (linear product) * (probability product)
+        effect_size_hurdle <- contrast %*% (linear_product_mean * prob_product_mean)
+        hurdle_product_cov <- (linear_product_mean %o% linear_product_mean) * product_cov_logistic + 
+                             (prob_product_mean %o% prob_product_mean) * product_cov_linear + 
+                             product_cov_linear * product_cov_logistic
+        cov_effect_size_hurdle <- contrast %*% hurdle_product_cov %*% t(contrast)
       }
-      vcov_hurdle <- Matrix::bdiag(vcov_l_lm, vcov_l_logm, vcov_r_lm, vcov_r_logm)
-      cov_effect_size_hurdle <- gradient_matrix_hurdle %*% as.matrix(vcov_hurdle) %*% t(gradient_matrix_hurdle)
       
       if (test_type == "chisq") {
         test_stat_hurdle <- t(effect_size_hurdle) %*% chol2inv(chol(cov_effect_size_hurdle)) %*% effect_size_hurdle
         pvalue_hurdle <- pchisq(test_stat_hurdle, df = nrow(contrast), lower.tail = FALSE)
+        
+        # 2-part p-values only available for chisq test
+        if (exists("test_stat_linear") && exists("test_stat_logistic")) {
+          test_stat_2part <- test_stat_linear + test_stat_logistic
+          pvalue_2part <- pchisq(test_stat_2part, df = nrow(contrast) * 2L, lower.tail = FALSE)
+        } else {
+          pvalue_2part <- NA
+        }
       } else if (test_type == "z") {
         theta <- as.numeric(effect_size_hurdle)
         se <- as.numeric(sqrt(cov_effect_size_hurdle))
@@ -429,16 +425,21 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
                                 "less.abs" = max(pnorm(as.numeric((theta - c)/se), lower.tail = TRUE),
                                                  pnorm(as.numeric((theta + c)/se), lower.tail = FALSE))
         )
-      }
-      if (test_type == "chisq") {
-        # 2-part p-values only available for chisq test
-        test_stat_2part <- test_stat_linear + test_stat_logistic
-        pvalue_2part <- pchisq(test_stat_2part, df = nrow(contrast) * 2L, lower.tail = FALSE)
-      } else if (test_type == "z") {
         pvalue_2part <- NA  # Not applicable for z-test
       }
-      pvalue_stouffer <- stouffer_combine_pvalues(c(pvalue_linear, pvalue_logistic))
-      pvalue_fisher <- fisher_combine_pvalues(c(pvalue_linear, pvalue_logistic))
+      
+      # Combine p-values using existing methods
+      pvalues_to_combine <- c()
+      if (exists("pvalue_linear")) pvalues_to_combine <- c(pvalues_to_combine, pvalue_linear)
+      if (exists("pvalue_logistic")) pvalues_to_combine <- c(pvalues_to_combine, pvalue_logistic)
+      
+      if (length(pvalues_to_combine) == 2) {
+        pvalue_stouffer <- stouffer_combine_pvalues(pvalues_to_combine)
+        pvalue_fisher <- fisher_combine_pvalues(pvalues_to_combine)
+      } else {
+        pvalue_stouffer <- NA
+        pvalue_fisher <- NA
+      }
       
       effect_size_hurdle <- as.numeric(effect_size_hurdle)
       dt.test[, c("effect_size_hurdle", "pvalue_hurdle", "pvalue_2part", "pvalue_stouffer", "pvalue_fisher") := 
@@ -509,4 +510,5 @@ ccc_test <- function(ccc_obj, contrast = NULL, test_type = NULL, ha = NULL,
   
   as.data.frame(dt.test.all)
 }
+
 
