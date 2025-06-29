@@ -12,6 +12,7 @@ ccc_test(
   c_linear = 0,
   c_logistic = 0,
   c_hurdle = 0,
+  score = c("product", "sum"),
   verbose = TRUE,
   padj_method = "BH",
   cell_type_padj = TRUE,
@@ -36,6 +37,12 @@ Only used if \code{test_type = "z"}. Defaults to "greater" for \code{ccc_enrich}
 
 \item{c_linear, c_logistic, c_hurdle}{numeric scalar. \code{c_linear} is for the tests on the linear component, \code{c_logistic} is for the tests on the logistic component, and \code{c_hurdle} is for the tests on the hurdle model. Default to 0. Must be non-negative for \code{ha = "greater.abs"} and \code{ha = "less.abs"}.}
 
+\item{score}{a character string specifying the method for computing effect sizes.
+\itemize{
+\item \dQuote{\code{product}}: (the default) effect sizes are computed as the product of ligand and receptor expressions. For linear component: product of conditional mean expressions. For logistic component: product of expression rates (probabilities). For hurdle: product of all four components.
+\item \dQuote{\code{sum}}: effect sizes are computed as the sum of ligand and receptor expressions. For linear component: sum of conditional mean expressions. For logistic component: sum of log-odds (coefficients). For hurdle: sum of (probability × conditional mean) for ligand and receptor separately.
+}}
+
 \item{verbose}{logical scalar. If \code{TRUE} (the default), display a progress bar. The default handler is "progress". This package uses the \pkg{progressr} framework for progress reporting, so users can customize the progress bar. See \code{\link[progressr:handlers]{progressr::handlers()}} for customizing progress bar behavior. Note that progress bars are not displayed in non-interactive mode or R markdown.}
 
 \item{padj_method}{a character string for multiple testing correction method. This is passed to \code{\link[stats:p.adjust]{stats::p.adjust()}}. Defaults to "BH".}
@@ -54,11 +61,11 @@ Perform Wald tests on the product of ligand expression levels in sender and rece
 This function performs Wald tests based on the output of \code{\link[=ccc_diff]{ccc_diff()}} or \code{\link[=ccc_enrich]{ccc_enrich()}}.
 By default, Wald Chisq tests are performed for differential ccc analysis and one-sided Wald Z tests are performed for enriched ccc analysis (alternative hypothesis: communication event in target cell types > background cell types).
 
-If the linear component is fitted successfully, this function performs a Wald test on the product of ligand and receptor conditional mean expressions (condition on expression levels > \code{threshold}).
-If the logistic componenet is fitted successfully, this function performs a Wald test on the product of ligand and receptor expression rates (rates of expression levels > \code{threshold}).
-If both components are fitted successfully, this function performs a Wald test on the product of ligand and receptor mean expression levels (conditional mean of ligand \verb{*} expression rate of ligand \verb{*} conditional mean of receptor \verb{*} expression rate of receptor).
+If the linear component is fitted successfully, this function performs a Wald test on the product (or sum, if \code{score = "sum"}) of ligand and receptor conditional mean expressions (condition on expression levels > \code{threshold}).
+If the logistic componenet is fitted successfully, this function performs a Wald test on the product of ligand and receptor expression rates (\code{score = "product"}) or the sum of ligand and receptor log-odds (\code{score = "sum"}).
+If both components are fitted successfully, this function performs a Wald test on the combined effect. For \code{score = "product"}: conditional mean of ligand \verb{*} expression rate of ligand \verb{*} conditional mean of receptor \verb{*} expression rate of receptor. For \code{score = "sum"}: (expression rate of ligand \verb{*} conditional mean of ligand) + (expression rate of receptor \verb{*} conditional mean of receptor).
 The delta method is applied to obtain the relevant standard errors, using the estimates from the output of \verb{ccc_*}.
-The effect sizes are computed as the product vector of ligand and receptor expressions (conditional mean expressions, expression rates, and mean expression levels), with each element corresponds to a level of \code{group_col}, multiplied by \code{contrast} (\code{ccc_diff}), or the difference in the product of ligand and receptor expressions comparing target against background cell types (\code{ccc_enrich}).
+The effect sizes are computed as the product or sum (depending on \code{score}) of ligand and receptor expressions. For \code{score = "product"}: conditional mean expressions, expression rates, and mean expression levels are multiplied. For \code{score = "sum"}: conditional mean expressions and log-odds are summed (with appropriate transformations for hurdle model). Each element corresponds to a level of \code{group_col}, multiplied by \code{contrast} (\code{ccc_diff}), or the difference comparing target against background cell types (\code{ccc_enrich}).
 
 If \code{ha = "greater.abs"}, the test statistic is \eqn{(|\hat{\theta}| - c)/se(\hat{\theta})}, and the p-value is two-sided.
 If \code{ha = "less.abs"}, the test statistics are \eqn{(\hat{\theta} - c)/se(\hat{\theta})} and \eqn{(\hat{\theta} + c)/se(\hat{\theta})}. The p-value is the maximum of the two one-sided tests.
@@ -104,6 +111,13 @@ head(b.result1)
 b.result2 <- ccc_test(b, test_type = "z", ha = "greater",
     c_linear = 0.1, c_logistic = 0.1, c_hurdle = 0.1)
 head(b.result2)
+
+## Using sum scoring method
+a.result.sum <- ccc_test(a, contrast = contrast2, score = "sum")
+head(a.result.sum)
+
+b.result.sum <- ccc_test(b, score = "sum")
+head(b.result.sum)
 }
 
 }
