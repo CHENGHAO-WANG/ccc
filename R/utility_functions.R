@@ -312,8 +312,8 @@ ccc_estimate <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logis
         if (isTRUE(approx)) {
           # Use attenuation approximation for marginal coefficients
           # First get conditional coefficients
-          coef_l_logm <- stats::coef(fit.l.logistic)
-          coef_r_logm <- stats::coef(fit.r.logistic)
+          coef_l_logm <- lme4::fixef(fit.l.logistic)
+          coef_r_logm <- lme4::fixef(fit.r.logistic)
           vcov_l_logm <- vcov(fit.l.logistic, sandwich = sandwich)[var_names, var_names]
           vcov_r_logm <- vcov(fit.r.logistic, sandwich = sandwich)[var_names, var_names]
           
@@ -344,8 +344,8 @@ ccc_estimate <- function(fit.l.linear, fit.l.logistic, fit.r.linear, fit.r.logis
         }
       } else {
         # Use conditional coefficients (default behavior)
-        coef_l_logm <- stats::coef(fit.l.logistic)
-        coef_r_logm <- stats::coef(fit.r.logistic)
+        coef_l_logm <- lme4::fixef(fit.l.logistic)
+        coef_r_logm <- lme4::fixef(fit.r.logistic)
         vcov_l_logm <- vcov(fit.l.logistic, sandwich = sandwich)[var_names, var_names]
         vcov_r_logm <- vcov(fit.r.logistic, sandwich = sandwich)[var_names, var_names]
       }

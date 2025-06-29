@@ -529,7 +529,8 @@ ccc_diff <- function(expression_matrix, metadata,
   }
 
   setDTthreads(threads = 1)
-  results_obj <- future_lapply(j_s, FUN = run_analysis, future.seed = TRUE)
+  results_obj <- future_lapply(j_s, FUN = run_analysis, future.seed = TRUE, future.chunk.size = chunk_size)
+  # results_obj <- lapply(j_s, FUN = run_analysis)
   setDTthreads(threads = old_nthreads)
 
   list.descriptive_stats <- lapply(results_obj, \(x) x$descriptive_stats)
